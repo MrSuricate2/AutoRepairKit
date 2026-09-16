@@ -104,6 +104,14 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
+        var fallback = configuration.FallBackToNpcWhenOutOfDarkMatter;
+        if (ImGui.Checkbox("Si plus de matière sombre, se replier sur le PNJ réparateur", ref fallback))
+        {
+            configuration.FallBackToNpcWhenOutOfDarkMatter = fallback;
+            configuration.Save();
+        }
+        ImGui.TextDisabled("Ne fait rien si aucun PNJ n'est enregistré pour la zone actuelle (voir l'onglet \"PNJ réparateurs\").");
+
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
@@ -118,11 +126,33 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("La réparation ne se déclenche que si au moins une pièce d'équipement\npasse sous ce seuil. Rien n'est réparé (ni consommé) au-dessus.");
 
         ImGui.Spacing();
+        ImGui.TextUnformatted("Ne jamais réparer automatiquement...");
 
-        var pauseUnsafe = configuration.PauseInUnsafeState;
-        if (ImGui.Checkbox("Ne jamais réparer en combat / craft / cinématique / en instance", ref pauseUnsafe))
+        var pauseInCombat = configuration.PauseInCombat;
+        if (ImGui.Checkbox("...en combat", ref pauseInCombat))
         {
-            configuration.PauseInUnsafeState = pauseUnsafe;
+            configuration.PauseInCombat = pauseInCombat;
+            configuration.Save();
+        }
+
+        var pauseCraft = configuration.PauseWhileCraftingOrGathering;
+        if (ImGui.Checkbox("...en craft / récolte / pêche", ref pauseCraft))
+        {
+            configuration.PauseWhileCraftingOrGathering = pauseCraft;
+            configuration.Save();
+        }
+
+        var pauseCutscene = configuration.PauseDuringCutscene;
+        if (ImGui.Checkbox("...pendant une cinématique", ref pauseCutscene))
+        {
+            configuration.PauseDuringCutscene = pauseCutscene;
+            configuration.Save();
+        }
+
+        var pauseDuty = configuration.PauseInDuty;
+        if (ImGui.Checkbox("...en instance/donjon", ref pauseDuty))
+        {
+            configuration.PauseInDuty = pauseDuty;
             configuration.Save();
         }
 
@@ -415,7 +445,8 @@ public class ConfigWindow : Window, IDisposable
         sb.AppendLine("=== Auto-Repair Kit - rapport de debug ===");
         sb.AppendLine($"Version: {Plugin.PluginInterface.Manifest.AssemblyVersion}");
         sb.AppendLine($"DalamudApiLevel: {Plugin.PluginInterface.Manifest.DalamudApiLevel}");
-        sb.AppendLine($"Mode: {configuration.Mode}, Seuil: {configuration.RepairThresholdPercent}%, PauseInUnsafeState: {configuration.PauseInUnsafeState}");
+        sb.AppendLine($"Mode: {configuration.Mode}, Seuil: {configuration.RepairThresholdPercent}%, Repli PNJ: {configuration.FallBackToNpcWhenOutOfDarkMatter}");
+        sb.AppendLine($"Pauses: combat={configuration.PauseInCombat}, craft/récolte={configuration.PauseWhileCraftingOrGathering}, cinématique={configuration.PauseDuringCutscene}, instance={configuration.PauseInDuty}");
         sb.AppendLine($"vnavmesh disponible: {manager.IsVNavmeshAvailable()}");
         sb.AppendLine($"Zone actuelle: {GetTerritoryName((ushort)Plugin.ClientState.TerritoryType)} ({Plugin.ClientState.TerritoryType})");
         sb.AppendLine($"PNJ enregistrés: {configuration.RepairNpcs.Count}");

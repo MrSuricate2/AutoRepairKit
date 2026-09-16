@@ -25,27 +25,46 @@ namespace SamplePlugin.Repair;
 public sealed class AutoRepairManager : IDisposable
 {
     private const float InteractDistance = 3.5f;
-    private static readonly ConditionFlag[] UnsafeConditions =
+
+    // Always blocked regardless of user preference: none of these are "do I want to be interrupted"
+    // choices, they're technical safety (mid-loading-screen, mid-trade, mid-scripted-event).
+    private static readonly ConditionFlag[] AlwaysUnsafeConditions =
+    [
+        ConditionFlag.BetweenAreas,
+        ConditionFlag.BetweenAreas51,
+        ConditionFlag.OccupiedInEvent,
+        ConditionFlag.OccupiedInQuestEvent,
+        ConditionFlag.TradeOpen,
+    ];
+
+    private static readonly ConditionFlag[] CombatConditions =
     [
         ConditionFlag.InCombat,
         ConditionFlag.Casting,
         ConditionFlag.Casting87,
+    ];
+
+    private static readonly ConditionFlag[] CraftingGatheringConditions =
+    [
         ConditionFlag.Crafting,
         ConditionFlag.ExecutingCraftingAction,
         ConditionFlag.PreparingToCraft,
         ConditionFlag.Gathering,
         ConditionFlag.ExecutingGatheringAction,
         ConditionFlag.Fishing,
-        ConditionFlag.OccupiedInEvent,
-        ConditionFlag.OccupiedInQuestEvent,
-        ConditionFlag.BetweenAreas,
-        ConditionFlag.BetweenAreas51,
+    ];
+
+    private static readonly ConditionFlag[] CutsceneConditions =
+    [
+        ConditionFlag.WatchingCutscene,
+        ConditionFlag.WatchingCutscene78,
+    ];
+
+    private static readonly ConditionFlag[] DutyConditions =
+    [
         ConditionFlag.BoundByDuty,
         ConditionFlag.BoundByDuty56,
         ConditionFlag.BoundByDuty95,
-        ConditionFlag.WatchingCutscene,
-        ConditionFlag.WatchingCutscene78,
-        ConditionFlag.TradeOpen,
     ];
 
     private enum State
@@ -219,10 +238,22 @@ public sealed class AutoRepairManager : IDisposable
         if (!Plugin.ClientState.IsLoggedIn || Plugin.ObjectTable.LocalPlayer == null)
             return false;
 
-        if (!config.PauseInUnsafeState)
-            return true;
+        if (Plugin.Condition.Any(AlwaysUnsafeConditions))
+            return false;
 
-        return !Plugin.Condition.Any(UnsafeConditions);
+        if (config.PauseInCombat && Plugin.Condition.Any(CombatConditions))
+            return false;
+
+        if (config.PauseWhileCraftingOrGathering && Plugin.Condition.Any(CraftingGatheringConditions))
+            return false;
+
+        if (config.PauseDuringCutscene && Plugin.Condition.Any(CutsceneConditions))
+            return false;
+
+        if (config.PauseInDuty && Plugin.Condition.Any(DutyConditions))
+            return false;
+
+        return true;
     }
 
     private void StartRepair()
@@ -243,6 +274,10 @@ public sealed class AutoRepairManager : IDisposable
         {
             const string msg = "Aucune matière sombre trouvée dans l'inventaire.";
             LogMessage(msg);
+
+            if (TryFallBackToNpc())
+                return;
+
             EnterCooldown(TimeSpan.FromMinutes(2), msg);
             return;
         }
@@ -274,8 +309,28 @@ public sealed class AutoRepairManager : IDisposable
         {
             const string msg = "La réparation directe a échoué (matière sombre incompatible avec l'ilvl de l'équipement ?).";
             LogMessage(msg);
+
+            if (TryFallBackToNpc())
+                return;
+
             EnterCooldown(TimeSpan.FromMinutes(2), msg);
         }
+    }
+
+    /// <summary>
+    /// Called when Dark Matter repair couldn't happen (none owned, or none compatible). Only kicks in
+    /// if the user opted in; StartNpcRepair() itself already handles "no NPC registered for this zone"
+    /// with its own message, so there's nothing extra to check here.
+    /// </summary>
+    private bool TryFallBackToNpc()
+    {
+        if (!plugin.Configuration.FallBackToNpcWhenOutOfDarkMatter)
+            return false;
+
+        LogDebug("Repli sur le PNJ réparateur (matière sombre indisponible/incompatible).");
+        activeMode = RepairMode.Npc;
+        StartNpcRepair();
+        return true;
     }
 
     private void StartNpcRepair()

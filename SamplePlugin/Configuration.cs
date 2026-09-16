@@ -27,8 +27,17 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public int RepairThresholdPercent { get; set; } = 30;
 
-    /// <summary>Don't try to repair while in combat, casting, crafting/gathering, in a duty, etc.</summary>
-    public bool PauseInUnsafeState { get; set; } = true;
+    public bool PauseInCombat { get; set; } = true;
+    public bool PauseWhileCraftingOrGathering { get; set; } = true;
+    public bool PauseDuringCutscene { get; set; } = true;
+    public bool PauseInDuty { get; set; } = true;
+
+    /// <summary>
+    /// If Dark Matter repair fails (none left, or none compatible with the equipment's ilvl), try the
+    /// registered repair NPC for the current zone instead of just giving up. No-ops silently if the
+    /// mode is already NPC, or if no NPC is registered for the zone (that failure gets its own message).
+    /// </summary>
+    public bool FallBackToNpcWhenOutOfDarkMatter { get; set; } = false;
 
     /// <summary>Registered "walk here and repair" NPCs.</summary>
     public List<RepairNpcEntry> RepairNpcs { get; set; } = [];
