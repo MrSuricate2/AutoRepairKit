@@ -42,6 +42,14 @@ public class Configuration : IPluginConfiguration
     /// <summary>Registered "walk here and repair" NPCs.</summary>
     public List<RepairNpcEntry> RepairNpcs { get; set; } = [];
 
+    // --- Materia extraction ---
+
+    /// <summary>
+    /// Auto-extract materia from any equipped item that reaches 100% spiritbond with materia melded.
+    /// Off by default: this destroys the item, so it's opt-in even more deliberately than repair.
+    /// </summary>
+    public bool AutoExtractMateriaEnabled { get; set; } = false;
+
     /// <summary>Which registered NPC to use for a given TerritoryId, when more than one is registered for it.</summary>
     public Dictionary<ushort, Guid> PreferredRepairNpcByTerritory { get; set; } = [];
 

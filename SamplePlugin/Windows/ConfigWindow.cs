@@ -5,6 +5,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Lumina.Excel.Sheets;
+using SamplePlugin.Materia;
 using SamplePlugin.Repair;
 
 namespace SamplePlugin.Windows;
@@ -62,6 +63,12 @@ public class ConfigWindow : Window, IDisposable
         {
             if (tab.Success)
                 DrawNpcTab();
+        }
+
+        using (var tab = ImRaii.TabItem("Extraction Matéria"))
+        {
+            if (tab.Success)
+                DrawMateriaTab();
         }
 
         using (var tab = ImRaii.TabItem("Divers"))
@@ -376,6 +383,63 @@ public class ConfigWindow : Window, IDisposable
         }
     }
 
+    private void DrawMateriaTab()
+    {
+        var manager = plugin.AutoMateriaExtractionManager;
+
+        ImGui.Spacing();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.65f, 0.2f, 1f));
+        ImGui.TextWrapped("⚠ L'extraction détruit la pièce d'équipement pour en récupérer la matéria. C'est irréversible.");
+        ImGui.PopStyleColor();
+
+        ImGui.Spacing();
+
+        var enabled = configuration.AutoExtractMateriaEnabled;
+        if (ImGui.Checkbox("Activer l'extraction automatique de matéria", ref enabled))
+        {
+            configuration.AutoExtractMateriaEnabled = enabled;
+            configuration.Save();
+        }
+        ImGui.TextDisabled("Se déclenche dès qu'une pièce équipée atteint 100% de lien avec au moins\nune matéria mélangée. Pas de seuil à régler : c'est une règle fixe du jeu.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        ImGui.BeginDisabled(manager.IsActive);
+        if (ImGui.Button("Extraire maintenant"))
+            manager.RequestManualExtraction();
+        ImGui.EndDisabled();
+
+        if (manager.IsActive)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Annuler"))
+                manager.Cancel();
+        }
+
+        if (manager.StatusText.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(manager.StatusText);
+        }
+
+        if (manager.MessageHistory.Count > 0)
+        {
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+            ImGui.TextUnformatted("Historique récent");
+
+            using var child = ImRaii.Child("##MateriaHistory", new Vector2(0, 120), true);
+            if (child.Success)
+            {
+                foreach (var entry in manager.MessageHistory)
+                    ImGui.TextWrapped(entry);
+            }
+        }
+    }
+
     private void DrawMiscTab()
     {
         ImGui.Spacing();
@@ -403,12 +467,13 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawDebugTab()
     {
-        var manager = plugin.AutoRepairManager;
+        var repairManager = plugin.AutoRepairManager;
+        var materiaManager = plugin.AutoMateriaExtractionManager;
 
         ImGui.Spacing();
         ImGui.TextUnformatted($"Version du plugin : {Plugin.PluginInterface.Manifest.AssemblyVersion}");
         ImGui.TextUnformatted($"DalamudApiLevel : {Plugin.PluginInterface.Manifest.DalamudApiLevel}");
-        ImGui.TextUnformatted($"vnavmesh détecté : {(manager.IsVNavmeshAvailable() ? "oui" : "non")}");
+        ImGui.TextUnformatted($"vnavmesh détecté : {(repairManager.IsVNavmeshAvailable() ? "oui" : "non")}");
         ImGui.TextUnformatted($"Zone actuelle : {GetTerritoryName((ushort)Plugin.ClientState.TerritoryType)}");
         ImGui.TextUnformatted($"Mode configuré : {configuration.Mode}, seuil : {configuration.RepairThresholdPercent}%");
 
@@ -420,26 +485,47 @@ public class ConfigWindow : Window, IDisposable
             ImGui.SetClipboardText(BuildDebugReport());
 
         ImGui.SameLine();
-        if (ImGui.Button("Vider le journal"))
-            manager.ClearDebugLog();
+        if (ImGui.Button("Vider les journaux"))
+        {
+            repairManager.ClearDebugLog();
+            materiaManager.ClearDebugLog();
+        }
 
         ImGui.Spacing();
-        ImGui.TextUnformatted($"Journal détaillé ({manager.DebugLog.Count} entrées, le plus récent en bas)");
+        ImGui.TextUnformatted($"Journal réparation ({repairManager.DebugLog.Count} entrées, le plus récent en bas)");
 
-        using var child = ImRaii.Child("##DebugLogChild", new Vector2(0, 0), true);
-        if (child.Success)
+        using (var child = ImRaii.Child("##DebugLogChild", new Vector2(0, 180), true))
         {
-            foreach (var line in manager.DebugLog)
-                ImGui.TextWrapped(line);
+            if (child.Success)
+            {
+                foreach (var line in repairManager.DebugLog)
+                    ImGui.TextWrapped(line);
 
-            if (manager.DebugLog.Count > 0)
-                ImGui.SetScrollHereY(1f);
+                if (repairManager.DebugLog.Count > 0)
+                    ImGui.SetScrollHereY(1f);
+            }
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted($"Journal extraction matéria ({materiaManager.DebugLog.Count} entrées, le plus récent en bas)");
+
+        using (var child = ImRaii.Child("##MateriaDebugLogChild", new Vector2(0, 0), true))
+        {
+            if (child.Success)
+            {
+                foreach (var line in materiaManager.DebugLog)
+                    ImGui.TextWrapped(line);
+
+                if (materiaManager.DebugLog.Count > 0)
+                    ImGui.SetScrollHereY(1f);
+            }
         }
     }
 
     private string BuildDebugReport()
     {
-        var manager = plugin.AutoRepairManager;
+        var repairManager = plugin.AutoRepairManager;
+        var materiaManager = plugin.AutoMateriaExtractionManager;
         var sb = new System.Text.StringBuilder();
 
         sb.AppendLine("=== Auto-Repair Kit - rapport de debug ===");
@@ -447,12 +533,18 @@ public class ConfigWindow : Window, IDisposable
         sb.AppendLine($"DalamudApiLevel: {Plugin.PluginInterface.Manifest.DalamudApiLevel}");
         sb.AppendLine($"Mode: {configuration.Mode}, Seuil: {configuration.RepairThresholdPercent}%, Repli PNJ: {configuration.FallBackToNpcWhenOutOfDarkMatter}");
         sb.AppendLine($"Pauses: combat={configuration.PauseInCombat}, craft/récolte={configuration.PauseWhileCraftingOrGathering}, cinématique={configuration.PauseDuringCutscene}, instance={configuration.PauseInDuty}");
-        sb.AppendLine($"vnavmesh disponible: {manager.IsVNavmeshAvailable()}");
+        sb.AppendLine($"vnavmesh disponible: {repairManager.IsVNavmeshAvailable()}");
         sb.AppendLine($"Zone actuelle: {GetTerritoryName((ushort)Plugin.ClientState.TerritoryType)} ({Plugin.ClientState.TerritoryType})");
         sb.AppendLine($"PNJ enregistrés: {configuration.RepairNpcs.Count}");
-        sb.AppendLine("--- Journal détaillé ---");
+        sb.AppendLine($"Extraction matéria activée: {configuration.AutoExtractMateriaEnabled}");
+        sb.AppendLine("--- Journal réparation ---");
 
-        foreach (var line in manager.DebugLog)
+        foreach (var line in repairManager.DebugLog)
+            sb.AppendLine(line);
+
+        sb.AppendLine("--- Journal extraction matéria ---");
+
+        foreach (var line in materiaManager.DebugLog)
             sb.AppendLine(line);
 
         return sb.ToString();

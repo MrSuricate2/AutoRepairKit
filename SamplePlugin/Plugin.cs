@@ -3,6 +3,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
+using SamplePlugin.Materia;
 using SamplePlugin.Repair;
 using SamplePlugin.Windows;
 
@@ -23,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     private const string RepairCommandName = "/pautorepair";
 
@@ -32,12 +34,14 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
     private RepairGaugeWindow RepairGaugeWindow { get; init; }
     public AutoRepairManager AutoRepairManager { get; init; }
+    public AutoMateriaExtractionManager AutoMateriaExtractionManager { get; init; }
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         AutoRepairManager = new AutoRepairManager(this);
+        AutoMateriaExtractionManager = new AutoMateriaExtractionManager(this);
 
         ConfigWindow = new ConfigWindow(this);
         RepairGaugeWindow = new RepairGaugeWindow(this);
@@ -62,6 +66,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         AutoRepairManager.Dispose();
+        AutoMateriaExtractionManager.Dispose();
 
         // Unregister all actions to not leak anything during disposal of plugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
