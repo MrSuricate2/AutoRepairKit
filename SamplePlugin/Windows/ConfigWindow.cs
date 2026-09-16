@@ -389,35 +389,31 @@ public class ConfigWindow : Window, IDisposable
 
         ImGui.Spacing();
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.65f, 0.2f, 1f));
-        ImGui.TextWrapped("⚠ L'extraction détruit la pièce d'équipement pour en récupérer la matéria. C'est irréversible.");
-        ImGui.TextWrapped("⚠ En vérification : la boîte de confirmation du jeu s'ouvre mais n'est PAS cliquée automatiquement pour l'instant. Confirmez manuellement en jeu.");
+        ImGui.TextWrapped("⚠ Ouvre automatiquement la fenêtre d'extraction de matéria du jeu dès qu'une pièce " +
+                           "équipée atteint 100% de lien avec de la matéria sertie. La sélection de la pièce et " +
+                           "la confirmation finale (qui détruit la pièce) restent à faire manuellement en jeu.");
         ImGui.PopStyleColor();
 
         ImGui.Spacing();
 
         var enabled = configuration.AutoExtractMateriaEnabled;
-        if (ImGui.Checkbox("Activer l'extraction automatique de matéria", ref enabled))
+        if (ImGui.Checkbox("Ouvrir automatiquement la fenêtre d'extraction", ref enabled))
         {
             configuration.AutoExtractMateriaEnabled = enabled;
             configuration.Save();
         }
-        ImGui.TextDisabled("Se déclenche dès qu'une pièce équipée atteint 100% de lien avec au moins\nune matéria mélangée. Pas de seuil à régler : c'est une règle fixe du jeu.");
+        ImGui.TextDisabled("Pas de seuil à régler : c'est une règle fixe du jeu (100% de lien).");
 
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.BeginDisabled(manager.IsActive);
-        if (ImGui.Button("Extraire maintenant"))
+        if (ImGui.Button("Ouvrir la fenêtre d'extraction maintenant"))
             manager.RequestManualExtraction();
-        ImGui.EndDisabled();
 
-        if (manager.IsActive)
-        {
-            ImGui.SameLine();
-            if (ImGui.Button("Annuler"))
-                manager.Cancel();
-        }
+        ImGui.SameLine();
+        if (ImGui.Button("Fermer la fenêtre"))
+            AutoMateriaExtractionManager.Cancel();
 
         if (manager.StatusText.Length > 0)
         {

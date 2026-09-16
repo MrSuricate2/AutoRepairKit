@@ -5,20 +5,29 @@ using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
-using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 
 namespace SamplePlugin.Materia;
 
 /// <summary>
-/// Watches equipped gear for items at 100% spiritbond with materia melded, and extracts the materia
-/// automatically (or on demand). Extraction destroys the item, so until the exact native entry point
-/// is confirmed against a live game, this deliberately stops short of auto-confirming the game's own
-/// Yes/No dialog - it opens it and logs its exact text, but a human has to click it.
+/// Watches equipped gear for items at 100% spiritbond with materia melded, and opens the game's own
+/// Materia Extraction window for you - confirmed via RepairMe's own source, which uses the exact same
+/// call as a "jump straight to it" shortcut: ActionManager.UseAction(GeneralAction, 14).
+///
+/// Selecting an item and confirming extraction inside that window is still a manual, in-game step.
+/// No reference implementation (not even RepairMe) drives that part programmatically, and after three
+/// wrong guesses at the lower-level MaterializeItem/MaterializeEntryId API - one of which had a real,
+/// if non-destructive, effect on the user's gear - it's not worth guessing a fourth time against real
+/// equipment. This still saves the trip through the General Actions menu, which is most of the value.
 /// </summary>
 public sealed class AutoMateriaExtractionManager : IDisposable
 {
+    // Confirmed via https://github.com/chalkos/RepairMe (PluginUI.cs, GeneralActionIdMateriaExtraction).
+    private const uint MateriaExtractionGeneralActionId = 14;
+
     // FFXIVClientStructs class name AddonMaterializeDialog -> native addon name "MaterializeDialog".
+    // Only listened to for logging here - see the class remarks above for why nothing gets auto-clicked.
     private const string DialogAddonName = "MaterializeDialog";
 
     private static readonly ConditionFlag[] UnsafeConditions =
@@ -41,20 +50,19 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private enum State
     {
         Idle,
-        WaitingForDialog,
         Cooldown,
     }
 
     private readonly Plugin plugin;
 
     private State state = State.Idle;
-    private DateTime stateEnteredAt = DateTime.MinValue;
     private DateTime lastCheck = DateTime.MinValue;
     private DateTime cooldownUntil = DateTime.MinValue;
-    private string pendingItemName = string.Empty;
 
     public string StatusText { get; private set; } = string.Empty;
-    public bool IsActive => state == State.WaitingForDialog;
+
+    /// <summary>Always false: opening the window is a one-shot action, there's nothing ongoing to cancel.</summary>
+    public bool IsActive => false;
 
     private readonly LinkedList<string> messageHistory = new();
     public IReadOnlyCollection<string> MessageHistory => messageHistory;
@@ -94,30 +102,20 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
     public void ClearDebugLog() => debugLog.Clear();
 
-    /// <summary>Lets the config window trigger an extraction attempt immediately.</summary>
+    /// <summary>Lets the config window open the extraction window immediately.</summary>
     public void RequestManualExtraction()
     {
-        if (state != State.Idle && state != State.Cooldown)
+        if (state != State.Idle)
             return;
 
-        StartExtraction();
+        OpenExtractionWindow();
     }
 
-    /// <summary>If a confirmation dialog is currently up, decline it instead of confirming.</summary>
-    public unsafe void Cancel()
+    /// <summary>Closes the extraction window if it's open.</summary>
+    public static unsafe void Cancel()
     {
-        if (state != State.WaitingForDialog)
-            return;
-
-        var addon = Plugin.GameGui.GetAddonByName<AddonMaterializeDialog>(DialogAddonName, 1);
-        if (addon != null)
-        {
-            addon->AtkUnitBase.FireCallbackInt(1);
-            addon->AtkUnitBase.Close(true);
-        }
-
-        LogMessage("Extraction annulée par l'utilisateur.");
-        EnterCooldown(TimeSpan.FromSeconds(15), "Annulé.");
+        var agent = AgentMaterialize.Instance();
+        agent->Hide();
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -143,16 +141,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
                     break;
 
                 if (MateriaCandidateFinder.TryFindExtractableItem(out _, out _, out _))
-                    StartExtraction();
-                break;
-
-            case State.WaitingForDialog:
-                if (now - stateEnteredAt > TimeSpan.FromSeconds(8))
-                {
-                    const string msg = "La boîte de confirmation d'extraction ne s'est pas ouverte, réessai plus tard.";
-                    LogMessage(msg);
-                    EnterCooldown(TimeSpan.FromSeconds(30), msg);
-                }
+                    OpenExtractionWindow();
                 break;
         }
     }
@@ -169,7 +158,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         return !Plugin.Condition.Any(UnsafeConditions);
     }
 
-    private unsafe void StartExtraction()
+    private unsafe void OpenExtractionWindow()
     {
         if (!MateriaCandidateFinder.TryFindExtractableItem(out var index, out var itemId, out var itemName))
         {
@@ -178,60 +167,36 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         }
 
-        var inventoryManager = InventoryManager.Instance();
-        var itemPtr = inventoryManager != null ? inventoryManager->GetInventorySlot(InventoryType.EquippedItems, index) : null;
-        if (itemPtr == null)
+        var actionManager = ActionManager.Instance();
+        if (actionManager == null)
         {
-            LogDebug("GetInventorySlot a retourné null juste avant l'appel MaterializeItem.");
+            LogDebug("ActionManager.Instance() a retourné null.");
             EnterCooldown(TimeSpan.FromSeconds(30), "Erreur interne.");
             return;
         }
 
-        var eventFramework = EventFramework.Instance();
-        if (eventFramework == null)
-        {
-            LogDebug("EventFramework.Instance() a retourné null.");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'accéder au module d'extraction.");
-            return;
-        }
+        LogDebug($"Ouverture de la fenêtre d'extraction pour itemId={itemId} ({itemName}), index={index}.");
+        var result = actionManager->UseAction(ActionType.GeneralAction, MateriaExtractionGeneralActionId);
+        LogDebug($"ActionManager.UseAction(GeneralAction, {MateriaExtractionGeneralActionId}) -> {result}");
 
-        // NB: of the 3 MaterializeEntryId values, Retrieve turned out to be a different, non-destructive
-        // "remove a melded materia" service (silently pulled one off, no dialog, no spiritbond change),
-        // and Desynth did nothing at all (likely the unrelated, skill-gated Desynthesis feature). Purify
-        // is what's left; unconfirmed until a live test proves it out (see OnDialogSetup below, which
-        // reads out the dialog's own text instead of auto-confirming).
-        LogDebug($"MaterializeItem: itemId={itemId} ({itemName}), index={index}, entry=Purify");
-        eventFramework->MaterializeItem(itemPtr, MaterializeEntryId.Purify);
+        if (result)
+            LogMessage($"Fenêtre d'extraction ouverte - {itemName} est prête (100% de lien). Sélectionnez-la et confirmez en jeu.");
+        else
+            LogMessage("Impossible d'ouvrir la fenêtre d'extraction de matéria (action générale refusée).");
 
-        pendingItemName = itemName;
-        StatusText = $"Extraction en cours sur {itemName}...";
-        state = State.WaitingForDialog;
-        stateEnteredAt = DateTime.Now;
+        EnterCooldown(TimeSpan.FromMinutes(2), result ? "Fenêtre ouverte, à finaliser en jeu." : "Échec de l'ouverture.");
     }
 
+    /// <summary>Logging only - see class remarks for why this never clicks anything.</summary>
     private unsafe void OnDialogSetup(AddonEvent type, AddonArgs args)
     {
-        LogDebug($"Addon '{DialogAddonName}' PostSetup reçu (state={state}).");
-
-        if (state != State.WaitingForDialog)
-        {
-            LogDebug("Ignoré: pas en attente de confirmation d'extraction.");
-            return;
-        }
-
         var addon = (AddonMaterializeDialog*)(void*)args.Addon.Address;
         if (addon == null)
             return;
 
-        // Verification step: read out exactly what the game is asking before we ever auto-click
-        // anything again, given Retrieve's wrong guess already had a real (if non-destructive) effect.
         var dialogText = addon->Text != null ? addon->Text->NodeText.ToString() : "(texte introuvable)";
         var itemNameText = addon->ItemName != null ? addon->ItemName->NodeText.ToString() : "(nom introuvable)";
-        LogDebug($"Contenu de la boîte: texte='{dialogText}' item='{itemNameText}'");
-
-        const string msg = "Boîte de confirmation ouverte - à confirmer manuellement en jeu pour cette vérification.";
-        LogMessage(msg);
-        EnterCooldown(TimeSpan.FromMinutes(2), msg);
+        LogDebug($"Addon '{DialogAddonName}' ouvert - texte='{dialogText}' item='{itemNameText}'.");
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)
