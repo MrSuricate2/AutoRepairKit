@@ -47,7 +47,11 @@ jobs:
         $manifest | Add-Member -NotePropertyName DownloadLinkInstall -NotePropertyValue $downloadUrl -Force
         $manifest | Add-Member -NotePropertyName DownloadLinkTesting -NotePropertyValue $downloadUrl -Force
         $manifest | Add-Member -NotePropertyName DownloadLinkUpdate -NotePropertyValue $downloadUrl -Force
-        @($manifest) | ConvertTo-Json -Depth 10 | Set-Content "$outDir\pluginmaster.json"
+        # NB: piping a single-element array into ConvertTo-Json unrolls it back into one object
+        # (PowerShell pipeline enumeration), so we must bind -InputObject directly instead of piping.
+        $manifestArray = @($manifest)
+        $json = ConvertTo-Json -InputObject $manifestArray -Depth 10
+        Set-Content -Path "$outDir\pluginmaster.json" -Value $json -Encoding utf8
 
     - name: Publish experimental release
       env:
