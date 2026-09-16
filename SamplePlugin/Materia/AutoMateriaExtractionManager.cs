@@ -12,9 +12,9 @@ namespace SamplePlugin.Materia;
 
 /// <summary>
 /// Watches equipped gear for items at 100% spiritbond with materia melded, and extracts the materia
-/// automatically (or on demand). Extraction destroys the item - the confirmation dialog the game
-/// shows for this isn't skippable/skipped on purpose anywhere in the flow below except the final
-/// "Yes" click, which mirrors clicking it yourself.
+/// automatically (or on demand). Extraction destroys the item, so until the exact native entry point
+/// is confirmed against a live game, this deliberately stops short of auto-confirming the game's own
+/// Yes/No dialog - it opens it and logs its exact text, but a human has to click it.
 /// </summary>
 public sealed class AutoMateriaExtractionManager : IDisposable
 {
@@ -195,8 +195,13 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         }
 
-        LogDebug($"MaterializeItem: itemId={itemId} ({itemName}), index={index}, entry=Retrieve");
-        eventFramework->MaterializeItem(itemPtr, MaterializeEntryId.Retrieve);
+        // NB: MaterializeEntryId.Retrieve turned out to be a *different*, non-destructive "remove a
+        // melded materia" service - it silently pulled a materia off without any confirmation dialog
+        // and without touching spiritbond. Desynth is the current best guess for the real 100%-spiritbond
+        // "extract materia, destroy the item" action; unconfirmed until a live test proves it out (see
+        // OnDialogSetup below, which now reads out the dialog's own text instead of auto-confirming).
+        LogDebug($"MaterializeItem: itemId={itemId} ({itemName}), index={index}, entry=Desynth");
+        eventFramework->MaterializeItem(itemPtr, MaterializeEntryId.Desynth);
 
         pendingItemName = itemName;
         StatusText = $"Extraction en cours sur {itemName}...";
@@ -218,12 +223,15 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         if (addon == null)
             return;
 
-        // Same convention as every other native Yes/No dialog: 0 = Yes, 1 = No.
-        addon->AtkUnitBase.FireCallbackInt(0);
-        LogDebug("Confirmation 'Oui' envoyée.");
+        // Verification step: read out exactly what the game is asking before we ever auto-click
+        // anything again, given Retrieve's wrong guess already had a real (if non-destructive) effect.
+        var dialogText = addon->Text != null ? addon->Text->NodeText.ToString() : "(texte introuvable)";
+        var itemNameText = addon->ItemName != null ? addon->ItemName->NodeText.ToString() : "(nom introuvable)";
+        LogDebug($"Contenu de la boîte: texte='{dialogText}' item='{itemNameText}'");
 
-        LogMessage($"Matéria extraite de {pendingItemName}.");
-        EnterCooldown(TimeSpan.FromSeconds(10), "Matéria extraite.");
+        const string msg = "Boîte de confirmation ouverte - à confirmer manuellement en jeu pour cette vérification.";
+        LogMessage(msg);
+        EnterCooldown(TimeSpan.FromMinutes(2), msg);
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)

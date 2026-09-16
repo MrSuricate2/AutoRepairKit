@@ -390,6 +390,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Spacing();
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.65f, 0.2f, 1f));
         ImGui.TextWrapped("⚠ L'extraction détruit la pièce d'équipement pour en récupérer la matéria. C'est irréversible.");
+        ImGui.TextWrapped("⚠ En vérification : la boîte de confirmation du jeu s'ouvre mais n'est PAS cliquée automatiquement pour l'instant. Confirmez manuellement en jeu.");
         ImGui.PopStyleColor();
 
         ImGui.Spacing();
