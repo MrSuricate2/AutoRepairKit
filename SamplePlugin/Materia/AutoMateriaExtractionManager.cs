@@ -73,6 +73,8 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private bool expectingListClick;
     private int eligibleCountBeforeClick;
     private string trackedItemName = string.Empty;
+    private int retryCount;
+    private const int MaxRetries = 6; // ~6 x 500ms = 3s of retries on the same open window, like Artisan's loop.
 
     /// <summary>
     /// Set by the manual "Extraire maintenant" button; keeps the polling loop going (independently of
@@ -244,6 +246,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         // necessarily the one OpenExtractionWindow() found first - so track the total eligible count
         // rather than one specific slot; see MateriaCandidateFinder.CountExtractableItems.
         eligibleCountBeforeClick = MateriaCandidateFinder.CountExtractableItems();
+        retryCount = 0;
 
         // Artisan's own polling waits ~500ms between opening the list and clicking - the list's
         // backing data likely isn't fully populated yet on the same tick PostSetup fires. Clicking
@@ -297,7 +300,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         state = State.WaitingToVerify;
     }
 
-    private void VerifyAndReport()
+    private unsafe void VerifyAndReport()
     {
         var eligibleCountAfter = MateriaCandidateFinder.CountExtractableItems();
         LogDebug($"Pièces éligibles avant={eligibleCountBeforeClick}, après={eligibleCountAfter}.");
@@ -306,6 +309,16 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         {
             LogMessage($"Matéria extraite ({trackedItemName} ou une autre pièce prête - {eligibleCountAfter} restante(s)).");
             EnterCooldown(TimeSpan.FromSeconds(10), "Matéria extraite.");
+        }
+        else if (eligibleCountBeforeClick > 0 && retryCount < MaxRetries && Plugin.GameGui.GetAddonByName<AtkUnitBase>(ListAddonName, 1) != null)
+        {
+            // Artisan's own loop just keeps calling ExtractFirstMateria() every ~500ms for as long as
+            // the window stays open, rather than giving up after one try - the list may simply not be
+            // interactive yet on the first couple of attempts even after the 500ms initial wait.
+            retryCount++;
+            LogDebug($"Aucun changement, nouvelle tentative sur la même fenêtre ({retryCount}/{MaxRetries}).");
+            clickAt = DateTime.Now.AddMilliseconds(500);
+            state = State.WaitingToClick;
         }
         else if (eligibleCountBeforeClick > 0)
         {
