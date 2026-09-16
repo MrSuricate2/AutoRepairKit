@@ -3,7 +3,7 @@
     "Author": "MrSuricate2",
     "Name": "Auto-Repair Kit",
     "InternalName": "SamplePlugin",
-    "AssemblyVersion": "1.0.0.22",
+    "AssemblyVersion": "1.0.0.23",
     "Description": "Surveille l'état de votre équipement et déclenche une réparation automatique dès\r\nqu'une pièce passe sous un seuil configurable. Deux méthodes au choix : matière sombre (sur soi,\r\nsans rien consommer tant que le seuil n'est pas franchi) ou PNJ réparateur (déplacement automatique\r\nvia vnavmesh puis réparation gratuite). Inclut une jauge visuelle façon RepairMe affichant l'état de\r\nchaque pièce d'équipement.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/MrSuricate2/AutoRepairKit",
