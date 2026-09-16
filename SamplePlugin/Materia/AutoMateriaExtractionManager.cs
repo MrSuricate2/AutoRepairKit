@@ -13,10 +13,16 @@ namespace SamplePlugin.Materia;
 /// <summary>
 /// Watches equipped gear for items at 100% spiritbond with materia melded, opens the game's own
 /// Materia Extraction window (confirmed via RepairMe's source: ActionManager.UseAction(GeneralAction, 14)),
-/// and clicks the matching row in its list - confirmed live to be a single, instant, non-destructive
-/// click (gear is kept, spiritbond resets, one materia is gained). One item per open/close cycle; the
-/// normal polling loop reopens the window for the next eligible item a couple of seconds later, so a
-/// full stack of spiritbonded gear gets cleared out piece by piece without further input.
+/// and clicks through it - confirmed non-destructive live (gear is kept, spiritbond resets, one materia
+/// is gained). One item per open/close cycle; the normal polling loop reopens the window for the next
+/// eligible item a couple of seconds later, so a full stack of spiritbonded gear clears out piece by
+/// piece without further input.
+///
+/// The actual click sequence (FireCallback with a specific AtkValue pair, no row/index lookup needed)
+/// is lifted from PunishXIV/Artisan's Spiritbond.cs (RawInformation/Spiritbond.cs,
+/// ExtractFirstMateria/ConfirmMateriaDialog) - a real, widely-used plugin that already solved this;
+/// three earlier from-scratch attempts here (FireCallbackInt on the addon, ReceiveEvent on the agent
+/// with a row index, forcing the agent's category) all verifiably did nothing.
 /// </summary>
 public sealed class AutoMateriaExtractionManager : IDisposable
 {
@@ -25,6 +31,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
     // Confirmed live via Dalamud's Addon Inspector: the list window's native name is "Materialize".
     private const string ListAddonName = "Materialize";
+    private const string DialogAddonName = "MaterializeDialog";
 
     private static readonly ConditionFlag[] UnsafeConditions =
     [
@@ -60,6 +67,9 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     /// opened manually through the game's own General Actions menu.
     /// </summary>
     private bool expectingListClick;
+    private int spiritbondBeforeClick;
+    private int trackedIndex;
+    private string trackedItemName = string.Empty;
 
     public string StatusText { get; private set; } = string.Empty;
     public bool IsActive => false;
@@ -76,12 +86,14 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
         Plugin.Framework.Update += OnFrameworkUpdate;
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, ListAddonName, OnListSetup);
+        Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, DialogAddonName, OnDialogSetup);
     }
 
     public void Dispose()
     {
         Plugin.Framework.Update -= OnFrameworkUpdate;
         Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, ListAddonName, OnListSetup);
+        Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, DialogAddonName, OnDialogSetup);
     }
 
     private void LogMessage(string message)
@@ -178,6 +190,8 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
         LogDebug($"Ouverture de la liste d'extraction pour itemId={itemId} ({itemName}), index={index}.");
         expectingListClick = true;
+        trackedIndex = index;
+        trackedItemName = itemName;
         var result = actionManager->UseAction(ActionType.GeneralAction, MateriaExtractionGeneralActionId);
         LogDebug($"ActionManager.UseAction(GeneralAction, {MateriaExtractionGeneralActionId}) -> {result}");
 
@@ -193,6 +207,13 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         EnterCooldown(TimeSpan.FromSeconds(5), StatusText);
     }
 
+    private static unsafe int GetSpiritbond(int equippedIndex)
+    {
+        var inventoryManager = InventoryManager.Instance();
+        var itemPtr = inventoryManager != null ? inventoryManager->GetInventorySlot(InventoryType.EquippedItems, equippedIndex) : null;
+        return itemPtr != null ? itemPtr->SpiritbondOrCollectability : 0;
+    }
+
     private unsafe void OnListSetup(AddonEvent type, AddonArgs args)
     {
         LogDebug($"Addon '{ListAddonName}' ouvert (expectingListClick={expectingListClick}).");
@@ -201,93 +222,50 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         expectingListClick = false;
 
-        if (!MateriaCandidateFinder.TryFindExtractableItem(out var index, out var itemId, out var itemName))
-        {
-            LogDebug("Plus aucune pièce éligible au moment où la liste s'est ouverte.");
+        var addon = (AtkUnitBase*)(void*)args.Addon.Address;
+        if (addon == null)
             return;
-        }
 
-        var inventoryManager = InventoryManager.Instance();
-        var itemPtr = inventoryManager != null ? inventoryManager->GetInventorySlot(InventoryType.EquippedItems, index) : null;
-        if (itemPtr == null)
-        {
-            LogDebug("GetInventorySlot a retourné null pour l'item cible.");
+        spiritbondBeforeClick = GetSpiritbond(trackedIndex);
+
+        // PunishXIV/Artisan's exact call (RawInformation/Spiritbond.cs, ExtractFirstMateria): no row
+        // lookup needed, just this fixed FireCallback.
+        var values = stackalloc AtkValue[2];
+        values[0] = new AtkValue { Type = AtkValueType.Int, Int = 2 };
+        values[1] = new AtkValue { Type = AtkValueType.UInt, UInt = 0 };
+        addon->FireCallback(1, values);
+        LogDebug("FireCallback(1, [Int=2, UInt=0]) envoyé sur 'Materialize' (méthode Artisan).");
+
+        VerifyAndReport();
+    }
+
+    /// <summary>
+    /// Artisan also handles a MaterializeDialog confirmation appearing after the click (rare per live
+    /// testing here - the user saw an instant, dialog-less extraction - but kept as a safety net).
+    /// </summary>
+    private unsafe void OnDialogSetup(AddonEvent type, AddonArgs args)
+    {
+        LogDebug($"Addon '{DialogAddonName}' ouvert.");
+
+        var addon = (AtkUnitBase*)(void*)args.Addon.Address;
+        if (addon == null)
             return;
-        }
 
-        var agent = AgentMaterialize.Instance();
-        if (agent == null)
-        {
-            LogDebug("AgentMaterialize.Instance() a retourné null.");
-            return;
-        }
+        addon->FireCallbackInt(0);
+        LogDebug("Confirmation 'Oui' envoyée sur MaterializeDialog.");
 
-        // The list defaults to whichever category was last used (the user saw Armoury Chest items,
-        // not Equipped) - row indices are only meaningful within the currently active category, so
-        // force it to "Equipped" first. 6 is AgentMateriaAttach.FilterCategory.Equipped; AgentMaterialize
-        // doesn't expose its own named enum but shares the same agent-generator lineage, so it's the
-        // best available guess - confirmed or denied by the ItemCount/Category logged right after.
-        const int equippedCategory = 6;
-        if (agent->Category != equippedCategory)
-        {
-            var categoryBefore = agent->Category;
-            var catRet = new AtkValue();
-            var catValues = stackalloc AtkValue[2];
-            catValues[0].Type = AtkValueType.Int;
-            catValues[0].Int = 0;
-            catValues[1].Type = AtkValueType.Int;
-            catValues[1].Int = equippedCategory;
-            agent->ReceiveEvent(&catRet, catValues, 2, 0);
-            LogDebug($"Changement de catégorie: {categoryBefore} -> {agent->Category} (ItemCount={agent->ItemCount}).");
-        }
+        VerifyAndReport();
+    }
 
-        var rowIndex = -1;
-        for (var i = 0; i < agent->ItemCount; i++)
-        {
-            var entry = agent->ItemsSorted[i].Value;
-            if (entry != null && entry->Item == itemPtr)
-            {
-                rowIndex = i;
-                break;
-            }
-        }
+    private void VerifyAndReport()
+    {
+        var spiritbondAfter = GetSpiritbond(trackedIndex);
+        LogDebug($"Symbiose avant={spiritbondBeforeClick}, après={spiritbondAfter}.");
 
-        if (rowIndex < 0)
-        {
-            LogDebug($"Item cible (itemId={itemId}) introuvable dans la liste Materialize ({agent->ItemCount} entrées).");
-            return;
-        }
-
-        var spiritbondBefore = itemPtr->SpiritbondOrCollectability;
-
-        // FireCallbackInt(rowIndex) on the addon was tried first and confirmed live to do nothing -
-        // this is a real AtkComponentList, not a simple popup menu like SelectString. Selecting a row
-        // goes through the owning Agent's ReceiveEvent instead, mirroring the confirmed-working
-        // AgentMateriaAttach.SelectItem pattern from github.com/Jaksuhn/ffxiv-bundleoftweaks
-        // (GettingTooAttached.cs): values = [1, rowIndex, 1, 0].
-        var ret = new AtkValue();
-        var values = stackalloc AtkValue[4];
-        values[0].Type = AtkValueType.Int;
-        values[0].Int = 1;
-        values[1].Type = AtkValueType.Int;
-        values[1].Int = rowIndex;
-        values[2].Type = AtkValueType.Int;
-        values[2].Int = 1;
-        values[3].Type = AtkValueType.Int;
-        values[3].Int = 0;
-        agent->ReceiveEvent(&ret, values, 4, 0);
-
-        // Re-fetch (don't trust the old pointer) and verify against real, observable state instead of
-        // just assuming the click worked - the previous version logged "success" unconditionally here,
-        // which turned out to be false.
-        var itemPtrAfter = InventoryManager.Instance()->GetInventorySlot(InventoryType.EquippedItems, index);
-        var spiritbondAfter = itemPtrAfter != null ? itemPtrAfter->SpiritbondOrCollectability : spiritbondBefore;
-        LogDebug($"ReceiveEvent(select, row={rowIndex}) envoyé. Symbiose avant={spiritbondBefore}, après={spiritbondAfter}.");
-
-        if (spiritbondAfter < spiritbondBefore)
-            LogMessage($"Matéria extraite de {itemName}.");
-        else
-            LogMessage($"Le clic sur {itemName} n'a rien changé (symbiose toujours à {spiritbondAfter / 100f:0}%) - la sélection n'a probablement pas fonctionné.");
+        if (spiritbondAfter < spiritbondBeforeClick)
+            LogMessage($"Matéria extraite de {trackedItemName}.");
+        else if (spiritbondBeforeClick > 0)
+            LogMessage($"Le clic sur {trackedItemName} n'a rien changé (symbiose toujours à {spiritbondAfter / 100f:0}%).");
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)
