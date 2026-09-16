@@ -22,7 +22,7 @@ passe sous un seuil de durabilité configurable, avec une jauge visuelle façon 
 2. Onglet **Expérimental**, section **Dépôts personnalisés**.
 3. Ajoutez l'URL suivante puis validez :
    ```
-   https://github.com/MrSuricate2/AutoRepairKit/releases/download/experimental/pluginmaster.json
+   https://raw.githubusercontent.com/MrSuricate2/AutoRepairKit/master/pluginmaster.json
    ```
 4. Ouvrez le gestionnaire de plugins : `/xlplugins` (ou `xlplugins`).
 5. Cherchez **Auto-Repair Kit** (visible dans "Tous les plugins" / dépôts personnalisés) et installez-le.
