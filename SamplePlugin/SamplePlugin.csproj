@@ -4,7 +4,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.0.0.1</Version>
     <!-- Manifest fields (see https://github.com/goatcorp/DalamudPackager/blob/827d88dc/DalamudPackager/DalamudPackager.cs#L420) -->
-    <Author>your name here</Author>
+    <Author>MrSuricate2</Author>
     <Name>Auto-Repair Kit</Name>
     <Punchline>Répare automatiquement votre équipement sous un seuil donné, via matière sombre ou PNJ.</Punchline>
     <Description>Surveille l'état de votre équipement et déclenche une réparation automatique dès
@@ -12,7 +12,7 @@ qu'une pièce passe sous un seuil configurable. Deux méthodes au choix : matiè
 sans rien consommer tant que le seuil n'est pas franchi) ou PNJ réparateur (déplacement automatique
 via vnavmesh puis réparation gratuite). Inclut une jauge visuelle façon RepairMe affichant l'état de
 chaque pièce d'équipement.</Description>
-    <RepoUrl>https://github.com/goatcorp/SamplePlugin</RepoUrl>
+    <RepoUrl>https://github.com/MrSuricate2/AutoRepairKit</RepoUrl>
     <Tags>repair;auto-repair;durability;reparation</Tags>
   </PropertyGroup>
 
