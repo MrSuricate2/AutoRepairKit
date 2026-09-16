@@ -12,7 +12,6 @@ public class Configuration : IPluginConfiguration
     public int Version { get; set; } = 0;
 
     public bool IsConfigWindowMovable { get; set; } = true;
-    public bool SomePropertyToBeSavedAndWithADefault { get; set; } = true;
 
     // --- Auto-repair ---
 
@@ -31,14 +30,18 @@ public class Configuration : IPluginConfiguration
     /// <summary>Don't try to repair while in combat, casting, crafting/gathering, in a duty, etc.</summary>
     public bool PauseInUnsafeState { get; set; } = true;
 
-    /// <summary>Registered "walk here and repair" NPCs, keyed implicitly by TerritoryId.</summary>
+    /// <summary>Registered "walk here and repair" NPCs.</summary>
     public List<RepairNpcEntry> RepairNpcs { get; set; } = [];
+
+    /// <summary>Which registered NPC to use for a given TerritoryId, when more than one is registered for it.</summary>
+    public Dictionary<ushort, Guid> PreferredRepairNpcByTerritory { get; set; } = [];
 
     // --- Visual gauge (RepairMe-style) ---
 
     public bool ShowGauge { get; set; } = true;
     public bool GaugeLocked { get; set; } = false;
     public Vector2 GaugePosition { get; set; } = new(200, 200);
+    public GaugeStyle GaugeStyle { get; set; } = GaugeStyle.Bar;
 
     /// <summary>Gauge segments turn orange below this % and red below <see cref="GaugeCriticalPercent"/>.</summary>
     public int GaugeWarningPercent { get; set; } = 50;

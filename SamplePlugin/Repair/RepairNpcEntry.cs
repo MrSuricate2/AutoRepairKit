@@ -12,6 +12,7 @@ namespace SamplePlugin.Repair;
 [Serializable]
 public class RepairNpcEntry
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
     public uint DataId { get; set; }
     public ushort TerritoryId { get; set; }

@@ -15,11 +15,4 @@ chaque pièce d'équipement.</Description>
     <RepoUrl>https://github.com/MrSuricate2/AutoRepairKit</RepoUrl>
     <Tags>repair;auto-repair;durability;reparation</Tags>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="..\Data\goat.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Visible>false</Visible>
-    </Content>
-  </ItemGroup>
 </Project>

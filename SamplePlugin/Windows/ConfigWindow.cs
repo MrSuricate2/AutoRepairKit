@@ -1,8 +1,10 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Lumina.Excel.Sheets;
 using SamplePlugin.Repair;
 
 namespace SamplePlugin.Windows;
@@ -18,10 +20,10 @@ public class ConfigWindow : Window, IDisposable
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(420, 380),
+            MinimumSize = new Vector2(460, 420),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
-        Size = new Vector2(460, 420);
+        Size = new Vector2(500, 460);
         SizeCondition = ImGuiCond.FirstUseEver;
 
         this.plugin = plugin;
@@ -126,11 +128,25 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
-        if (ImGui.Button("Réparer maintenant"))
-            plugin.AutoRepairManager.RequestManualRepair();
+        var manager = plugin.AutoRepairManager;
 
-        ImGui.SameLine();
-        ImGui.TextDisabled(plugin.AutoRepairManager.StatusText);
+        ImGui.BeginDisabled(manager.IsActive);
+        if (ImGui.Button("Réparer maintenant"))
+            manager.RequestManualRepair();
+        ImGui.EndDisabled();
+
+        if (manager.IsActive)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Annuler"))
+                manager.Cancel();
+        }
+
+        if (manager.StatusText.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(manager.StatusText);
+        }
     }
 
     private void DrawGaugeTab()
@@ -151,6 +167,24 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Style (comme RepairMe)");
+
+        var style = configuration.GaugeStyle;
+        if (ImGui.RadioButton("Barre (globale + détail par pièce)", style == GaugeStyle.Bar))
+        {
+            configuration.GaugeStyle = GaugeStyle.Bar;
+            configuration.Save();
+        }
+
+        if (ImGui.RadioButton("Icônes (une rangée par pièce d'équipement)", style == GaugeStyle.Icons))
+        {
+            configuration.GaugeStyle = GaugeStyle.Icons;
+            configuration.Save();
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
         ImGui.Spacing();
 
         var warning = configuration.GaugeWarningPercent;
@@ -179,6 +213,9 @@ public class ConfigWindow : Window, IDisposable
 
         ImGui.Spacing();
 
+        var currentTerritory = (ushort)Plugin.ClientState.TerritoryType;
+        ImGui.TextUnformatted($"Zone actuelle : {GetTerritoryName(currentTerritory)}");
+
         var target = Plugin.TargetManager.Target;
         ImGui.BeginDisabled(target == null);
         if (ImGui.Button("Enregistrer la cible actuelle comme PNJ réparateur"))
@@ -189,7 +226,7 @@ public class ConfigWindow : Window, IDisposable
                 {
                     Name = target.Name.ToString(),
                     DataId = target.BaseId,
-                    TerritoryId = (ushort)Plugin.ClientState.TerritoryType,
+                    TerritoryId = currentTerritory,
                     Position = target.Position,
                 });
                 configuration.Save();
@@ -207,15 +244,46 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
+        var candidatesHere = configuration.RepairNpcs.Where(n => n.TerritoryId == currentTerritory).ToList();
+        ImGui.TextUnformatted("PNJ à utiliser dans cette zone");
+
+        configuration.PreferredRepairNpcByTerritory.TryGetValue(currentTerritory, out var preferredId);
+        var preferredEntry = candidatesHere.FirstOrDefault(n => n.Id == preferredId) ?? candidatesHere.FirstOrDefault();
+        var comboLabel = preferredEntry?.Name ?? "Aucun PNJ enregistré pour cette zone";
+
+        ImGui.SetNextItemWidth(300);
+        ImGui.BeginDisabled(candidatesHere.Count == 0);
+        using (var combo = ImRaii.Combo("##PreferredNpcCombo", comboLabel))
+        {
+            if (combo.Success)
+            {
+                foreach (var candidate in candidatesHere)
+                {
+                    var isSelected = candidate.Id == preferredEntry?.Id;
+                    if (ImGui.Selectable(candidate.Name, isSelected))
+                    {
+                        configuration.PreferredRepairNpcByTerritory[currentTerritory] = candidate.Id;
+                        configuration.Save();
+                    }
+                }
+            }
+        }
+        ImGui.EndDisabled();
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
         ImGui.TextUnformatted("PNJ enregistrés");
 
-        using var table = ImRaii.Table("##RepairNpcTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg);
+        using var table = ImRaii.Table("##RepairNpcTable", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg);
         if (!table.Success)
             return;
 
         ImGui.TableSetupColumn("Nom");
-        ImGui.TableSetupColumn("Zone (Id)");
+        ImGui.TableSetupColumn("Zone");
         ImGui.TableSetupColumn("Position");
+        ImGui.TableSetupColumn("Actif");
         ImGui.TableSetupColumn("");
         ImGui.TableHeadersRow();
 
@@ -228,14 +296,21 @@ public class ConfigWindow : Window, IDisposable
             ImGui.TextUnformatted(npc.Name);
 
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(npc.TerritoryId.ToString());
+            ImGui.TextUnformatted(GetTerritoryName(npc.TerritoryId));
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted($"{npc.Position.X:0}, {npc.Position.Y:0}, {npc.Position.Z:0}");
 
             ImGui.TableNextColumn();
+            var isPreferred = configuration.PreferredRepairNpcByTerritory.TryGetValue(npc.TerritoryId, out var pid) && pid == npc.Id;
+            ImGui.TextUnformatted(isPreferred ? "★" : "");
+
+            ImGui.TableNextColumn();
             if (ImGui.SmallButton($"Supprimer##{i}"))
             {
+                if (configuration.PreferredRepairNpcByTerritory.TryGetValue(npc.TerritoryId, out var pref) && pref == npc.Id)
+                    configuration.PreferredRepairNpcByTerritory.Remove(npc.TerritoryId);
+
                 configuration.RepairNpcs.RemoveAt(i);
                 configuration.Save();
             }
@@ -246,18 +321,23 @@ public class ConfigWindow : Window, IDisposable
     {
         ImGui.Spacing();
 
-        var configValue = configuration.SomePropertyToBeSavedAndWithADefault;
-        if (ImGui.Checkbox("Random Config Bool", ref configValue))
-        {
-            configuration.SomePropertyToBeSavedAndWithADefault = configValue;
-            configuration.Save();
-        }
-
         var movable = configuration.IsConfigWindowMovable;
-        if (ImGui.Checkbox("Movable Config Window", ref movable))
+        if (ImGui.Checkbox("Fenêtre de configuration déplaçable", ref movable))
         {
             configuration.IsConfigWindowMovable = movable;
             configuration.Save();
         }
+    }
+
+    private static string GetTerritoryName(uint territoryId)
+    {
+        if (Plugin.DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var row))
+        {
+            var name = row.PlaceName.Value.Name.ToString();
+            if (!string.IsNullOrEmpty(name))
+                return name;
+        }
+
+        return $"Zone {territoryId}";
     }
 }
