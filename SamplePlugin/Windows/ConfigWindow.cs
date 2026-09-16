@@ -88,8 +88,6 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        ImGui.BeginDisabled(!enabled);
-
         ImGui.Spacing();
         ImGui.TextUnformatted("Méthode de réparation");
         var mode = configuration.Mode;
@@ -127,8 +125,6 @@ public class ConfigWindow : Window, IDisposable
             configuration.PauseInUnsafeState = pauseUnsafe;
             configuration.Save();
         }
-
-        ImGui.EndDisabled();
 
         ImGui.Spacing();
         ImGui.Separator();
