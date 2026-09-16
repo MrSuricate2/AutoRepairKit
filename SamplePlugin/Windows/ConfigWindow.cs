@@ -388,27 +388,25 @@ public class ConfigWindow : Window, IDisposable
         var manager = plugin.AutoMateriaExtractionManager;
 
         ImGui.Spacing();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.65f, 0.2f, 1f));
-        ImGui.TextWrapped("⚠ Ouvre automatiquement la fenêtre d'extraction de matéria du jeu dès qu'une pièce " +
-                           "équipée atteint 100% de lien avec de la matéria sertie. La sélection de la pièce et " +
-                           "la confirmation finale (qui détruit la pièce) restent à faire manuellement en jeu.");
-        ImGui.PopStyleColor();
+        ImGui.TextWrapped("Extrait automatiquement la matéria de chaque pièce équipée qui atteint 100% de lien " +
+                           "(avec matéria sertie). Confirmé sans risque pour l'équipement : la pièce n'est pas " +
+                           "détruite, seul le lien redescend et vous gagnez la matéria.");
 
         ImGui.Spacing();
 
         var enabled = configuration.AutoExtractMateriaEnabled;
-        if (ImGui.Checkbox("Ouvrir automatiquement la fenêtre d'extraction", ref enabled))
+        if (ImGui.Checkbox("Activer l'extraction automatique de matéria", ref enabled))
         {
             configuration.AutoExtractMateriaEnabled = enabled;
             configuration.Save();
         }
-        ImGui.TextDisabled("Pas de seuil à régler : c'est une règle fixe du jeu (100% de lien).");
+        ImGui.TextDisabled("Pas de seuil à régler : c'est une règle fixe du jeu (100% de lien). Traite les pièces\nune par une, quelques secondes d'écart entre chacune.");
 
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        if (ImGui.Button("Ouvrir la fenêtre d'extraction maintenant"))
+        if (ImGui.Button("Extraire maintenant"))
             manager.RequestManualExtraction();
 
         ImGui.SameLine();
