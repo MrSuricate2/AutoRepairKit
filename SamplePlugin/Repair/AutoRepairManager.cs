@@ -249,20 +249,33 @@ public sealed class AutoRepairManager : IDisposable
 
         LogDebug($"Matière sombre trouvée: itemId={itemId}");
 
-        var actionManager = ActionManager.Instance();
-        if (actionManager == null)
+        var repairManager = RepairManager.Instance();
+        if (repairManager == null)
         {
-            LogDebug("ActionManager.Instance() a retourné null.");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'ouvrir la fenêtre de réparation.");
+            LogDebug("RepairManager.Instance() a retourné null.");
+            EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'accéder au module de réparation.");
             return;
         }
 
-        // Same call the game makes for a hotbar-slotted item or a "/item" macro - it resolves the
-        // bag/slot itself, unlike AgentInventoryContext.UseItem which needs an already-open context menu.
-        var useResult = actionManager->UseAction(ActionType.Item, itemId);
-        LogDebug($"ActionManager.UseAction(Item, {itemId}) -> {useResult}");
-        state = State.WaitingForRepairWindow;
-        stateEnteredAt = DateTime.Now;
+        // Dark Matter can't be placed on a hotbar/used via ActionManager (confirmed: it just returns
+        // false), and AgentInventoryContext.UseItem needs an already-open context menu to do anything.
+        // RepairManager lives in the game-logic layer rather than the UI/Agent layer, so it looks like
+        // the actual "repair everything now" entry point the UI button ends up calling into - try it
+        // directly, without ever opening the RepairKit window.
+        var repairResult = repairManager->RepairEquipped(false);
+        LogDebug($"RepairManager.RepairEquipped(false) -> {repairResult}");
+
+        if (repairResult)
+        {
+            LogMessage("Équipement réparé automatiquement.");
+            EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
+        }
+        else
+        {
+            const string msg = "La réparation directe a échoué (matière sombre incompatible avec l'ilvl de l'équipement ?).";
+            LogMessage(msg);
+            EnterCooldown(TimeSpan.FromMinutes(2), msg);
+        }
     }
 
     private void StartNpcRepair()
