@@ -53,6 +53,24 @@ jobs:
         $json = ConvertTo-Json -InputObject $manifestArray -Depth 10
         Set-Content -Path "$outDir\pluginmaster.json" -Value $json -Encoding utf8
 
+        # Also drop a copy at the repo root: GitHub Release asset URLs redirect through a
+        # signed/expiring Azure blob link, which some HTTP clients choke on. raw.githubusercontent.com
+        # is a stable, non-redirecting URL, which is what we actually want people to add as their
+        # Dalamud custom repo.
+        Copy-Item "$outDir\pluginmaster.json" ".\pluginmaster.json" -Force
+
+    - name: Commit pluginmaster.json to repo root
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add pluginmaster.json
+        if (git diff --cached --quiet) {
+          Write-Host "pluginmaster.json unchanged, skipping commit"
+        } else {
+          git commit -m "Mise a jour de pluginmaster.json [skip ci]"
+          git push
+        }
+
     - name: Publish experimental release
       env:
         GH_TOKEN: ${{ github.token }}
