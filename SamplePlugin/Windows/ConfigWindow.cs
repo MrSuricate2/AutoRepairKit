@@ -147,6 +147,21 @@ public class ConfigWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled(manager.StatusText);
         }
+
+        if (manager.MessageHistory.Count > 0)
+        {
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+            ImGui.TextUnformatted("Historique récent");
+
+            using var child = ImRaii.Child("##RepairHistory", new Vector2(0, 120), true);
+            if (child.Success)
+            {
+                foreach (var entry in manager.MessageHistory)
+                    ImGui.TextWrapped(entry);
+            }
+        }
     }
 
     private void DrawGaugeTab()
@@ -180,6 +195,12 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.RadioButton("Icônes (une rangée par pièce d'équipement)", style == GaugeStyle.Icons))
         {
             configuration.GaugeStyle = GaugeStyle.Icons;
+            configuration.Save();
+        }
+
+        if (ImGui.RadioButton("Barre d'XP (fine, façon barre d'expérience)", style == GaugeStyle.ExperienceBar))
+        {
+            configuration.GaugeStyle = GaugeStyle.ExperienceBar;
             configuration.Save();
         }
 
@@ -222,13 +243,19 @@ public class ConfigWindow : Window, IDisposable
         {
             if (target != null)
             {
-                configuration.RepairNpcs.Add(new RepairNpcEntry
+                var newEntry = new RepairNpcEntry
                 {
                     Name = target.Name.ToString(),
                     DataId = target.BaseId,
                     TerritoryId = currentTerritory,
                     Position = target.Position,
-                });
+                };
+                configuration.RepairNpcs.Add(newEntry);
+
+                // First one registered for this zone becomes the default automatically.
+                if (!configuration.PreferredRepairNpcByTerritory.ContainsKey(currentTerritory))
+                    configuration.PreferredRepairNpcByTerritory[currentTerritory] = newEntry.Id;
+
                 configuration.Save();
             }
         }
@@ -247,8 +274,8 @@ public class ConfigWindow : Window, IDisposable
         var candidatesHere = configuration.RepairNpcs.Where(n => n.TerritoryId == currentTerritory).ToList();
         ImGui.TextUnformatted("PNJ à utiliser dans cette zone");
 
-        configuration.PreferredRepairNpcByTerritory.TryGetValue(currentTerritory, out var preferredId);
-        var preferredEntry = candidatesHere.FirstOrDefault(n => n.Id == preferredId) ?? candidatesHere.FirstOrDefault();
+        var effectivePreferredId = GetEffectivePreferredNpcId(currentTerritory);
+        var preferredEntry = candidatesHere.FirstOrDefault(n => n.Id == effectivePreferredId) ?? candidatesHere.FirstOrDefault();
         var comboLabel = preferredEntry?.Name ?? "Aucun PNJ enregistré pour cette zone";
 
         ImGui.SetNextItemWidth(300);
@@ -302,7 +329,7 @@ public class ConfigWindow : Window, IDisposable
             ImGui.TextUnformatted($"{npc.Position.X:0}, {npc.Position.Y:0}, {npc.Position.Z:0}");
 
             ImGui.TableNextColumn();
-            var isPreferred = configuration.PreferredRepairNpcByTerritory.TryGetValue(npc.TerritoryId, out var pid) && pid == npc.Id;
+            var isPreferred = GetEffectivePreferredNpcId(npc.TerritoryId) == npc.Id;
             ImGui.TextUnformatted(isPreferred ? "★" : "");
 
             ImGui.TableNextColumn();
@@ -327,6 +354,19 @@ public class ConfigWindow : Window, IDisposable
             configuration.IsConfigWindowMovable = movable;
             configuration.Save();
         }
+    }
+
+    /// <summary>
+    /// The NPC that would actually be used for a given zone: the explicitly chosen one if any,
+    /// otherwise the first one registered for that zone (mirrors AutoRepairManager's own fallback,
+    /// so a lone registered NPC always shows as active even before it's ever been picked from the combo).
+    /// </summary>
+    private Guid? GetEffectivePreferredNpcId(ushort territoryId)
+    {
+        if (configuration.PreferredRepairNpcByTerritory.TryGetValue(territoryId, out var id))
+            return id;
+
+        return configuration.RepairNpcs.FirstOrDefault(n => n.TerritoryId == territoryId)?.Id;
     }
 
     private static string GetTerritoryName(uint territoryId)

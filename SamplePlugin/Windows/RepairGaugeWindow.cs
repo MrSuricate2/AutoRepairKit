@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
@@ -62,16 +63,24 @@ public class RepairGaugeWindow : Window, IDisposable
             }
         }
 
-        if (config.GaugeStyle == GaugeStyle.Icons)
-            DrawIconsStyle(slots, config);
-        else
-            DrawBarStyle(slots, config);
+        switch (config.GaugeStyle)
+        {
+            case GaugeStyle.Icons:
+                DrawIconsStyle(slots, config);
+                break;
+            case GaugeStyle.ExperienceBar:
+                DrawExperienceBarStyle(slots, config);
+                break;
+            default:
+                DrawBarStyle(slots, config);
+                break;
+        }
 
         if (plugin.AutoRepairManager.StatusText.Length > 0)
             ImGui.TextDisabled(plugin.AutoRepairManager.StatusText);
     }
 
-    private void DrawBarStyle(System.Collections.Generic.List<RepairSlotInfo> slots, Configuration config)
+    private void DrawBarStyle(List<RepairSlotInfo> slots, Configuration config)
     {
         var lowest = 100f;
         foreach (var slot in slots)
@@ -124,7 +133,7 @@ public class RepairGaugeWindow : Window, IDisposable
         }
     }
 
-    private static void DrawIconsStyle(System.Collections.Generic.List<RepairSlotInfo> slots, Configuration config)
+    private static void DrawIconsStyle(List<RepairSlotInfo> slots, Configuration config)
     {
         var iconSize = new Vector2(28, 28) * ImGuiHelpers.GlobalScale;
         var drawList = ImGui.GetWindowDrawList();
@@ -150,6 +159,51 @@ public class RepairGaugeWindow : Window, IDisposable
 
         if (slots.Count == 0)
             ImGui.TextDisabled("Aucun équipement.");
+    }
+
+    /// <summary>Slim rounded bar mimicking the game's native experience bar: just the overall % filled in, no breakdown.</summary>
+    private static void DrawExperienceBarStyle(List<RepairSlotInfo> slots, Configuration config)
+    {
+        var lowest = 100f;
+        foreach (var slot in slots)
+        {
+            if (slot.ConditionPercent < lowest)
+                lowest = slot.ConditionPercent;
+        }
+
+        var scale = ImGuiHelpers.GlobalScale;
+        var size = new Vector2(280, 14) * scale;
+        var cursor = ImGui.GetCursorScreenPos();
+        var drawList = ImGui.GetWindowDrawList();
+        var rounding = size.Y / 2f;
+
+        drawList.AddRectFilled(cursor, cursor + size, ImGui.ColorConvertFloat4ToU32(new Vector4(0.05f, 0.05f, 0.05f, 0.9f)), rounding);
+
+        var fillColor = ColorFor(lowest, config);
+        var fillWidth = MathF.Round(size.X * Math.Clamp(lowest / 100f, 0f, 1f));
+
+        if (fillWidth > 1f)
+        {
+            var fillMax = cursor + new Vector2(fillWidth, size.Y);
+            var fillFlags = fillWidth >= size.X - 1f ? ImDrawFlags.RoundCornersAll : ImDrawFlags.RoundCornersLeft;
+            drawList.AddRectFilled(cursor, fillMax, ImGui.ColorConvertFloat4ToU32(fillColor), rounding, fillFlags);
+
+            // Subtle lighter sheen on the top half, like the native XP bar's gloss.
+            var sheen = new Vector4(Math.Min(1f, fillColor.X + 0.25f), Math.Min(1f, fillColor.Y + 0.25f), Math.Min(1f, fillColor.Z + 0.25f), 0.35f);
+            var sheenMin = cursor + new Vector2(1.5f, 1.5f) * scale;
+            var sheenMax = new Vector2(fillMax.X - 1.5f * scale, cursor.Y + size.Y * 0.45f);
+            if (sheenMax.X > sheenMin.X)
+                drawList.AddRectFilled(sheenMin, sheenMax, ImGui.ColorConvertFloat4ToU32(sheen), rounding * 0.6f, ImDrawFlags.RoundCornersTop);
+        }
+
+        drawList.AddRect(cursor, cursor + size, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.6f)), rounding, ImDrawFlags.None, 1.5f * scale);
+
+        ImGui.Dummy(size);
+
+        var text = $"{lowest:0}%";
+        var textSize = ImGui.CalcTextSize(text);
+        var textPos = cursor + (size - textSize) / 2f;
+        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 1f)), text);
     }
 
     private static Vector4 ColorFor(float conditionPercent, Configuration config)

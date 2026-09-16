@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Game.Addon.Lifecycle;
@@ -68,18 +69,28 @@ public sealed class AutoRepairManager : IDisposable
     private RepairNpcEntry? targetNpc;
     private int moveRetries;
 
+    // FFXIVClientStructs class names are always "Addon" + the real native addon name used by
+    // IAddonLifecycle/GetAddonByName. AddonRepair -> "Repair" (this one was wrongly left as
+    // "AddonRepair" in an earlier version, which meant the listener below never fired).
+    private const string RepairAddonName = "Repair";
+
     /// <summary>Exposed so the gauge/config windows can show what the manager is currently doing.</summary>
     public string StatusText { get; private set; } = string.Empty;
 
     /// <summary>True while a repair sequence is actively running (movement/menu/window), so the UI can offer a Cancel button.</summary>
     public bool IsActive => state is State.MovingToNpc or State.WaitingForMenu or State.WaitingForRepairWindow;
 
+    private readonly LinkedList<string> messageHistory = new();
+
+    /// <summary>Last few status/error messages, most recent first, so nothing gets lost in the chat log.</summary>
+    public IReadOnlyCollection<string> MessageHistory => messageHistory;
+
     public AutoRepairManager(Plugin plugin)
     {
         this.plugin = plugin;
 
         Plugin.Framework.Update += OnFrameworkUpdate;
-        Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "AddonRepair", OnRepairAddonSetup);
+        Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, RepairAddonName, OnRepairAddonSetup);
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "SelectString", OnSelectStringSetup);
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "SelectIconString", OnSelectIconStringSetup);
     }
@@ -87,9 +98,22 @@ public sealed class AutoRepairManager : IDisposable
     public void Dispose()
     {
         Plugin.Framework.Update -= OnFrameworkUpdate;
-        Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "AddonRepair", OnRepairAddonSetup);
+        Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, RepairAddonName, OnRepairAddonSetup);
         Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "SelectString", OnSelectStringSetup);
         Plugin.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "SelectIconString", OnSelectIconStringSetup);
+    }
+
+    private void LogMessage(string message)
+    {
+        Plugin.ChatGui.Print($"[Auto-Repair] {message}");
+        AddHistory(message);
+    }
+
+    private void AddHistory(string message)
+    {
+        messageHistory.AddFirst($"{DateTime.Now:HH:mm:ss} — {message}");
+        while (messageHistory.Count > 10)
+            messageHistory.RemoveLast();
     }
 
     /// <summary>Lets the config window trigger a repair immediately, bypassing the threshold check.</summary>
@@ -108,6 +132,7 @@ public sealed class AutoRepairManager : IDisposable
             return;
 
         navmesh.Stop();
+        AddHistory("Annulé par l'utilisateur.");
         EnterCooldown(TimeSpan.FromSeconds(20), "Annulé.");
     }
 
@@ -146,7 +171,7 @@ public sealed class AutoRepairManager : IDisposable
                 if (now - stateEnteredAt > TimeSpan.FromSeconds(8))
                 {
                     const string msg = "Le PNJ n'a pas proposé de réparation dans le délai imparti, réparation manuelle nécessaire cette fois-ci.";
-                    Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+                    LogMessage(msg);
                     EnterCooldown(TimeSpan.FromSeconds(30), msg);
                 }
                 break;
@@ -155,7 +180,7 @@ public sealed class AutoRepairManager : IDisposable
                 if (now - stateEnteredAt > TimeSpan.FromSeconds(8))
                 {
                     const string msg = "La fenêtre de réparation ne s'est pas ouverte, réessai plus tard.";
-                    Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+                    LogMessage(msg);
                     EnterCooldown(TimeSpan.FromSeconds(30), msg);
                 }
                 break;
@@ -193,7 +218,7 @@ public sealed class AutoRepairManager : IDisposable
         if (!DarkMatterFinder.TryFindBestStack(out var container, out var slot, out var itemId))
         {
             const string msg = "Aucune matière sombre trouvée dans l'inventaire.";
-            Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+            LogMessage(msg);
             EnterCooldown(TimeSpan.FromMinutes(2), msg);
             return;
         }
@@ -222,7 +247,7 @@ public sealed class AutoRepairManager : IDisposable
         if (entry == null)
         {
             const string msg = "Aucun PNJ réparateur enregistré pour cette zone. Ciblez-en un et utilisez \"Enregistrer la cible\" dans la config.";
-            Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+            LogMessage(msg);
             EnterCooldown(TimeSpan.FromMinutes(5), msg);
             return;
         }
@@ -230,7 +255,7 @@ public sealed class AutoRepairManager : IDisposable
         if (!navmesh.IsAvailable())
         {
             const string msg = "vnavmesh est introuvable ou non chargé, impossible de se déplacer automatiquement.";
-            Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+            LogMessage(msg);
             EnterCooldown(TimeSpan.FromMinutes(5), msg);
             return;
         }
@@ -254,7 +279,7 @@ public sealed class AutoRepairManager : IDisposable
         if (now - stateEnteredAt > TimeSpan.FromSeconds(90))
         {
             const string msg = "Trajet vers le PNJ réparateur trop long, abandon.";
-            Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+            LogMessage(msg);
             navmesh.Stop();
             EnterCooldown(TimeSpan.FromMinutes(2), msg);
             return;
@@ -278,7 +303,7 @@ public sealed class AutoRepairManager : IDisposable
             if (npcObject == null)
             {
                 const string msg = "PNJ réparateur introuvable à l'endroit enregistré.";
-                Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+                LogMessage(msg);
                 EnterCooldown(TimeSpan.FromMinutes(2), msg);
                 return;
             }
@@ -297,7 +322,7 @@ public sealed class AutoRepairManager : IDisposable
             if (moveRetries > 3)
             {
                 const string msg = "Impossible d'atteindre le PNJ réparateur (chemin bloqué ?).";
-                Plugin.ChatGui.Print($"[Auto-Repair] {msg}");
+                LogMessage(msg);
                 EnterCooldown(TimeSpan.FromMinutes(2), msg);
                 return;
             }
@@ -348,7 +373,7 @@ public sealed class AutoRepairManager : IDisposable
         }
 
         repairManager->RepairEquipped(activeMode == RepairMode.Npc);
-        Plugin.ChatGui.Print("[Auto-Repair] Équipement réparé automatiquement.");
+        LogMessage("Équipement réparé automatiquement.");
         EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
     }
 

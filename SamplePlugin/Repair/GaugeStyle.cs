@@ -10,4 +10,7 @@ public enum GaugeStyle
 
     /// <summary>Compact row of equipment icons, tinted/bordered by condition.</summary>
     Icons,
+
+    /// <summary>Slim, rounded bar mimicking the native experience bar look.</summary>
+    ExperienceBar,
 }
