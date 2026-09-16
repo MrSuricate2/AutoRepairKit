@@ -1,78 +1,80 @@
-> ⚠️ **Don't click Fork!**
-> 
-> This is a GitHub Template repo. If you want to use this for a plugin, [use this template][new-repo] to make a new repo!
->
-> ![image](https://github.com/goatcorp/SamplePlugin/assets/16760685/d9732094-e1ed-4769-a70b-58ed2b92580c)
+# Auto-Repair Kit
 
-# SamplePlugin
+Plugin Dalamud pour FINAL FANTASY XIV qui répare automatiquement votre équipement dès qu'une pièce
+passe sous un seuil de durabilité configurable, avec une jauge visuelle façon RepairMe.
 
-[![Use This Template badge](https://img.shields.io/badge/Use%20This%20Template-0?logo=github&labelColor=grey)][new-repo]
+## Fonctionnalités
 
+- **Seuil configurable** (%) : la réparation ne se déclenche que si au moins une pièce équipée passe
+  sous ce seuil. Rien n'est réparé (ni consommé) tant que tout est au-dessus.
+- **Deux méthodes de réparation**, au choix dans la config :
+  - **Matière sombre** : réparation sur soi, détecte automatiquement le meilleur palier de matière
+    sombre possédé dans l'inventaire.
+  - **PNJ réparateur** : déplacement automatique (via [vnavmesh](https://github.com/awgil/ffxiv_navmesh))
+    jusqu'à un PNJ que vous avez enregistré, puis réparation gratuite.
+- **Jauge visuelle** façon RepairMe : barre globale + détail dépliable par pièce d'équipement (icône,
+  % de durabilité, % de lien matéria), avec code couleur vert/orange/rouge.
+- Ne se déclenche jamais en combat, en craft/récolte, en cinématique ou en instance.
 
-Simple example plugin for Dalamud.
+## Installation (version expérimentale)
 
-This is not designed to be the simplest possible example, but it is also not designed to cover everything you might want to do. For more detailed questions, come ask in [the Discord](https://discord.gg/holdshift).
+1. En jeu, ouvrez les réglages Dalamud : `/xlsettings` (ou `xlsettings` dans la console).
+2. Onglet **Expérimental**, section **Dépôts personnalisés**.
+3. Ajoutez l'URL suivante puis validez :
+   ```
+   https://github.com/MrSuricate2/AutoRepairKit/releases/download/experimental/pluginmaster.json
+   ```
+4. Ouvrez le gestionnaire de plugins : `/xlplugins` (ou `xlplugins`).
+5. Cherchez **Auto-Repair Kit** (visible dans "Tous les plugins" / dépôts personnalisés) et installez-le.
 
-## Main Points
+Une nouvelle version expérimentale est publiée automatiquement à chaque mise à jour du code ; Dalamud
+vous proposera la mise à jour dans le gestionnaire de plugins.
 
-* Simple functional plugin
-  * Slash command
-  * Main UI
-  * Settings UI
-  * Image loading
-  * Plugin json
-* Simple, slightly-improved plugin configuration handling
-* Project organization
-  * Copies all necessary plugin files to the output directory
-    * Does not copy dependencies that are provided by dalamud
-    * Output directory can be zipped directly and have exactly what is required
-  * Hides data files from visual studio to reduce clutter
-    * Also allows having data files in different paths than VS would usually allow if done in the IDE directly
+### Prérequis pour le mode "PNJ réparateur"
 
+Ce mode nécessite le plugin [vnavmesh](https://github.com/awgil/ffxiv_navmesh) pour le déplacement
+automatique (à installer séparément, non fourni ici). Sans lui, seul le mode "Matière sombre" fonctionnera.
 
-The intention is less that any of this is used directly in other projects, and more to show how similar things can be done.
+## Utilisation
 
-## How To Use
+Ouvrez la fenêtre de configuration avec `/pautorepair`, ou via le bouton dans le gestionnaire de plugins.
 
-### Getting Started
+- **Onglet Réparation automatique** : activer/désactiver, choisir la méthode, régler le seuil, bouton
+  "Réparer maintenant" pour forcer une réparation immédiate.
+- **Onglet Jauge** : afficher/masquer la jauge, la verrouiller en position, régler les seuils de
+  couleur orange/rouge.
+- **Onglet PNJ réparateurs** : ciblez en jeu un PNJ capable de réparer, puis cliquez sur
+  "Enregistrer la cible actuelle" pour l'associer à la zone courante. Un PNJ enregistré par zone est
+  utilisé automatiquement quand le mode "PNJ" est actif.
 
-To begin, [clone this template repository][new-repo] to your own GitHub account. This will automatically bring in everything you need to get a jumpstart on development. You do not need to fork this repository unless you intend to contribute modifications to it.
+## Limitations connues
 
-Be sure to also check out the [Dalamud Developer Docs][dalamud-docs] for helpful information about building your own plugin. The Developer Docs includes helpful information about all sorts of things, including [how to submit][submit] your newly-created plugin to the official repository. Assuming you use this template repository, the provided project build configuration and license are already chosen to make everything a breeze.
+- Le clic automatique dans le menu d'un PNJ (SelectString/SelectIconString) se base sur une détection
+  par mot-clé ("repair", "réparer", etc.) ; si un PNJ présente un menu inhabituel, le plugin abandonne
+  proprement après quelques secondes et vous prévient dans le chat plutôt que de rester bloqué.
+- Les noms d'IPC vnavmesh utilisés peuvent évoluer avec les mises à jour de ce plugin tiers ; voir
+  `SamplePlugin/Repair/VNavmeshIpc.cs` en cas de souci de déplacement.
 
-[new-repo]: https://github.com/new?template_name=SamplePlugin&template_owner=goatcorp
-[dalamud-docs]: https://dalamud.dev
-[submit]: https://dalamud.dev/plugin-publishing/submission
+## Compilation depuis les sources
 
-### Prerequisites
+### Prérequis
 
-SamplePlugin assumes all the following prerequisites are met:
+- XIVLauncher, FINAL FANTASY XIV et Dalamud installés, avec le jeu lancé au moins une fois avec Dalamud.
+- XIVLauncher installé dans ses répertoires par défaut (sinon, définir la variable d'environnement
+  `DALAMUD_HOME` vers le dossier de dev de Dalamud).
+- Le SDK .NET 10 installé (généralement géré automatiquement par l'IDE).
 
-* XIVLauncher, FINAL FANTASY XIV, and Dalamud have all been installed and the game has been run with Dalamud at least once.
-* XIVLauncher is installed to its default directories and configurations.
-  * If a custom path is required for Dalamud's dev directory, it must be set with the `DALAMUD_HOME` environment variable.
-* A .NET Core 8 SDK has been installed and configured, or is otherwise available. (In most cases, the IDE will take care of this.)
+### Étapes
 
-### Building
+1. Ouvrez `SamplePlugin.slnx` dans votre éditeur C# (Visual Studio ou JetBrains Rider).
+2. Compilez la solution (`Debug` ou `Release`).
+3. Le plugin compilé se trouve dans `SamplePlugin/bin/x64/Debug/SamplePlugin.dll` (ou `Release`).
 
-1. Open up `SamplePlugin.sln` in your C# editor of choice (likely [Visual Studio](https://visualstudio.microsoft.com) or [JetBrains Rider](https://www.jetbrains.com/rider/)).
-2. Build the solution. By default, this will build a `Debug` build, but you can switch to `Release` in your IDE.
-3. The resulting plugin can be found at `SamplePlugin/bin/x64/Debug/SamplePlugin.dll` (or `Release` if appropriate.)
+Pour tester une build locale sans passer par le dépôt personnalisé : `/xlsettings` > **Expérimental** >
+**Dev Plugin Locations**, ajoutez le chemin complet vers `SamplePlugin.dll`, puis activez-le depuis
+`/xlplugins` > **Dev Tools** > **Installed Dev Plugins**.
 
-### Activating in-game
+## CI/CD
 
-1. Launch the game and use `/xlsettings` in chat or `xlsettings` in the Dalamud Console to open up the Dalamud settings.
-    * In here, go to `Experimental`, and add the full path to the `SamplePlugin.dll` to the list of Dev Plugin Locations.
-2. Next, use `/xlplugins` (chat) or `xlplugins` (console) to open up the Plugin Installer.
-    * In here, go to `Dev Tools > Installed Dev Plugins`, and the `SamplePlugin` should be visible. Enable it.
-3. You should now be able to use `/pmycommand` (chat) or `pmycommand` (console)!
-
-Note that you only need to add it to the Dev Plugin Locations once (Step 1); it is preserved afterwards. You can disable, enable, or load your plugin on startup through the Plugin Installer.
-
-### Reconfiguring for your own uses
-
-Replace all references to `SamplePlugin` in all the files and filenames with your desired name, then start building the plugin of your dreams. You'll figure it out 😁
-
-Dalamud will load the JSON file (by default, `SamplePlugin/SamplePlugin.json`) next to your DLL and use it for metadata, including the description for your plugin in the Plugin Installer. Make sure to update this with information relevant to _your_ plugin!
-
-All participation in this repository is governed by our [Code of Conduct](https://dalamud.dev/code-of-conduct). If you used AI tooling at any point, review the [AI Usage Policy](https://dalamud.dev/plugin-publishing/ai-policy) and disclose your level of AI use. Entirely AI-generated submissions will be rejected, and undisclosed AI use may result in a ban.
+Le workflow `.github/workflows/release.yml` rebuild le plugin et republie la release `experimental`
+(avec `latest.zip` et `pluginmaster.json`) à chaque push sur `master`.
