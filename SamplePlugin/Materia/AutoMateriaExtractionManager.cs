@@ -195,13 +195,13 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         }
 
-        // NB: MaterializeEntryId.Retrieve turned out to be a *different*, non-destructive "remove a
-        // melded materia" service - it silently pulled a materia off without any confirmation dialog
-        // and without touching spiritbond. Desynth is the current best guess for the real 100%-spiritbond
-        // "extract materia, destroy the item" action; unconfirmed until a live test proves it out (see
-        // OnDialogSetup below, which now reads out the dialog's own text instead of auto-confirming).
-        LogDebug($"MaterializeItem: itemId={itemId} ({itemName}), index={index}, entry=Desynth");
-        eventFramework->MaterializeItem(itemPtr, MaterializeEntryId.Desynth);
+        // NB: of the 3 MaterializeEntryId values, Retrieve turned out to be a different, non-destructive
+        // "remove a melded materia" service (silently pulled one off, no dialog, no spiritbond change),
+        // and Desynth did nothing at all (likely the unrelated, skill-gated Desynthesis feature). Purify
+        // is what's left; unconfirmed until a live test proves it out (see OnDialogSetup below, which
+        // reads out the dialog's own text instead of auto-confirming).
+        LogDebug($"MaterializeItem: itemId={itemId} ({itemName}), index={index}, entry=Purify");
+        eventFramework->MaterializeItem(itemPtr, MaterializeEntryId.Purify);
 
         pendingItemName = itemName;
         StatusText = $"Extraction en cours sur {itemName}...";
