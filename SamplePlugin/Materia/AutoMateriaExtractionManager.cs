@@ -54,6 +54,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     {
         Idle,
         WaitingToClick,
+        WaitingToVerify,
         Cooldown,
     }
 
@@ -63,6 +64,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private DateTime lastCheck = DateTime.MinValue;
     private DateTime cooldownUntil = DateTime.MinValue;
     private DateTime clickAt = DateTime.MinValue;
+    private DateTime verifyAt = DateTime.MinValue;
 
     /// <summary>
     /// True only right after we ourselves opened the list, so we never auto-click a window the player
@@ -71,6 +73,13 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private bool expectingListClick;
     private int eligibleCountBeforeClick;
     private string trackedItemName = string.Empty;
+
+    /// <summary>
+    /// Set by the manual "Extraire maintenant" button; keeps the polling loop going (independently of
+    /// the auto-enable setting) until every currently-ready piece has been processed, instead of
+    /// requiring one button click per item.
+    /// </summary>
+    private bool manualBatchActive;
 
     public string StatusText { get; private set; } = string.Empty;
     public bool IsActive => false;
@@ -115,13 +124,16 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
     public void ClearDebugLog() => debugLog.Clear();
 
-    /// <summary>Lets the config window trigger an extraction pass immediately.</summary>
+    /// <summary>
+    /// Lets the config window trigger an extraction pass immediately, and keeps going on its own
+    /// (every ~2s, via the normal polling loop) until no eligible piece remains.
+    /// </summary>
     public void RequestManualExtraction()
     {
-        if (state != State.Idle)
-            return;
+        manualBatchActive = true;
 
-        OpenExtractionWindow();
+        if (state == State.Idle)
+            OpenExtractionWindow();
     }
 
     /// <summary>Closes the extraction window if it's open.</summary>
@@ -151,16 +163,23 @@ public sealed class AutoMateriaExtractionManager : IDisposable
                     break;
                 lastCheck = now;
 
-                if (!ShouldConsiderExtraction())
+                if (!ShouldConsiderExtraction() && !manualBatchActive)
                     break;
 
                 if (MateriaCandidateFinder.TryFindExtractableItem(out _, out _, out _))
                     OpenExtractionWindow();
+                else
+                    manualBatchActive = false;
                 break;
 
             case State.WaitingToClick:
                 if (now >= clickAt)
                     PerformClick();
+                break;
+
+            case State.WaitingToVerify:
+                if (now >= verifyAt)
+                    VerifyAndReport();
                 break;
         }
     }
@@ -181,6 +200,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     {
         if (!MateriaCandidateFinder.TryFindExtractableItem(out var index, out var itemId, out var itemName))
         {
+            manualBatchActive = false;
             LogMessage("Aucune pièce à 100% de lien avec matéria mélangée.");
             EnterCooldown(TimeSpan.FromMinutes(2), string.Empty);
             return;
@@ -251,7 +271,11 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         addon->FireCallback(1, values);
         LogDebug("FireCallback(1, [Int=2, UInt=0]) envoyé sur 'Materialize' (méthode Artisan).");
 
-        VerifyAndReport();
+        // Extraction is presumably server-validated (it changes real inventory/item state), so the
+        // local eligible-item count doesn't update instantly - checking 1ms after the click showed
+        // "no change" even when the extraction genuinely went through. Give it a moment.
+        verifyAt = DateTime.Now.AddSeconds(1.5);
+        state = State.WaitingToVerify;
     }
 
     /// <summary>
@@ -269,7 +293,8 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         addon->FireCallbackInt(0);
         LogDebug("Confirmation 'Oui' envoyée sur MaterializeDialog.");
 
-        VerifyAndReport();
+        verifyAt = DateTime.Now.AddSeconds(1.5);
+        state = State.WaitingToVerify;
     }
 
     private void VerifyAndReport()
