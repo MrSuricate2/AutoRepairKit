@@ -54,4 +54,43 @@ public static class MateriaCandidateFinder
 
         return false;
     }
+
+    /// <summary>
+    /// How many equipped pieces are currently eligible. The native extraction window picks its own
+    /// default selection when several pieces qualify at once - not necessarily the one this class would
+    /// have picked first - so verifying "did extraction do *something*" needs a count across all
+    /// equipped gear, not a single tracked slot.
+    /// </summary>
+    public static unsafe int CountExtractableItems()
+    {
+        var count = 0;
+
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+            return 0;
+
+        var container = inventoryManager->GetInventoryContainer(InventoryType.EquippedItems);
+        if (container == null || !container->IsLoaded)
+            return 0;
+
+        for (var i = 0; i < container->Size; i++)
+        {
+            if (ExcludedSlotIndices.Contains((uint)i))
+                continue;
+
+            var item = container->GetInventorySlot(i);
+            if (item == null || item->ItemId == 0)
+                continue;
+
+            if (item->SpiritbondOrCollectability < 10000)
+                continue;
+
+            if (item->GetMateriaCount() == 0)
+                continue;
+
+            count++;
+        }
+
+        return count;
+    }
 }

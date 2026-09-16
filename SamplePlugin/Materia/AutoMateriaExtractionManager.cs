@@ -67,8 +67,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     /// opened manually through the game's own General Actions menu.
     /// </summary>
     private bool expectingListClick;
-    private int spiritbondBeforeClick;
-    private int trackedIndex;
+    private int eligibleCountBeforeClick;
     private string trackedItemName = string.Empty;
 
     public string StatusText { get; private set; } = string.Empty;
@@ -190,7 +189,6 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
         LogDebug($"Ouverture de la liste d'extraction pour itemId={itemId} ({itemName}), index={index}.");
         expectingListClick = true;
-        trackedIndex = index;
         trackedItemName = itemName;
         var result = actionManager->UseAction(ActionType.GeneralAction, MateriaExtractionGeneralActionId);
         LogDebug($"ActionManager.UseAction(GeneralAction, {MateriaExtractionGeneralActionId}) -> {result}");
@@ -207,13 +205,6 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         EnterCooldown(TimeSpan.FromSeconds(5), StatusText);
     }
 
-    private static unsafe int GetSpiritbond(int equippedIndex)
-    {
-        var inventoryManager = InventoryManager.Instance();
-        var itemPtr = inventoryManager != null ? inventoryManager->GetInventorySlot(InventoryType.EquippedItems, equippedIndex) : null;
-        return itemPtr != null ? itemPtr->SpiritbondOrCollectability : 0;
-    }
-
     private unsafe void OnListSetup(AddonEvent type, AddonArgs args)
     {
         LogDebug($"Addon '{ListAddonName}' ouvert (expectingListClick={expectingListClick}).");
@@ -226,7 +217,10 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         if (addon == null)
             return;
 
-        spiritbondBeforeClick = GetSpiritbond(trackedIndex);
+        // The window picks its own default selection when several pieces qualify at once - not
+        // necessarily the one OpenExtractionWindow() found first - so track the total eligible count
+        // rather than one specific slot; see MateriaCandidateFinder.CountExtractableItems.
+        eligibleCountBeforeClick = MateriaCandidateFinder.CountExtractableItems();
 
         // PunishXIV/Artisan's exact call (RawInformation/Spiritbond.cs, ExtractFirstMateria): no row
         // lookup needed, just this fixed FireCallback.
@@ -259,13 +253,13 @@ public sealed class AutoMateriaExtractionManager : IDisposable
 
     private void VerifyAndReport()
     {
-        var spiritbondAfter = GetSpiritbond(trackedIndex);
-        LogDebug($"Symbiose avant={spiritbondBeforeClick}, après={spiritbondAfter}.");
+        var eligibleCountAfter = MateriaCandidateFinder.CountExtractableItems();
+        LogDebug($"Pièces éligibles avant={eligibleCountBeforeClick}, après={eligibleCountAfter}.");
 
-        if (spiritbondAfter < spiritbondBeforeClick)
-            LogMessage($"Matéria extraite de {trackedItemName}.");
-        else if (spiritbondBeforeClick > 0)
-            LogMessage($"Le clic sur {trackedItemName} n'a rien changé (symbiose toujours à {spiritbondAfter / 100f:0}%).");
+        if (eligibleCountAfter < eligibleCountBeforeClick)
+            LogMessage($"Matéria extraite ({trackedItemName} ou une autre pièce prête - {eligibleCountAfter} restante(s)).");
+        else if (eligibleCountBeforeClick > 0)
+            LogMessage("Le clic n'a extrait aucune matéria (aucun changement détecté).");
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)
