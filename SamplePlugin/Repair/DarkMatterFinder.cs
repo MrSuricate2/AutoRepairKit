@@ -53,14 +53,14 @@ public static class DarkMatterFinder
     }
 
     /// <summary>
-    /// Finds the best Dark Matter stack currently carried in the player's main inventory (not the
+    /// Finds the best Dark Matter item id currently carried in the player's main inventory (not the
     /// armory/saddlebag). "Best" = highest-tier owned, since a higher grade can always repair gear a
     /// lower grade can't, while a lower grade simply can't touch current-expansion item levels.
+    /// Only the item id is needed: <see cref="FFXIVClientStructs.FFXIV.Client.Game.ActionManager.UseAction"/>
+    /// resolves the actual bag/slot itself, the same way a hotbar-slotted item or a "/item" macro does.
     /// </summary>
-    public static unsafe bool TryFindBestStack(out InventoryType container, out short slot, out uint itemId)
+    public static unsafe bool TryFindBestItemId(out uint itemId)
     {
-        container = default;
-        slot = 0;
         itemId = 0;
 
         var ids = GetDarkMatterItemIds();
@@ -72,8 +72,6 @@ public static class DarkMatterFinder
             return false;
 
         uint bestItemId = 0;
-        InventoryType bestContainer = default;
-        short bestSlot = 0;
 
         foreach (var bag in SearchBags)
         {
@@ -89,19 +87,13 @@ public static class DarkMatterFinder
 
                 // Higher item ids correspond to newer (higher tier) Dark Matter releases.
                 if (item->ItemId > bestItemId)
-                {
                     bestItemId = item->ItemId;
-                    bestContainer = bag;
-                    bestSlot = item->Slot;
-                }
             }
         }
 
         if (bestItemId == 0)
             return false;
 
-        container = bestContainer;
-        slot = bestSlot;
         itemId = bestItemId;
         return true;
     }

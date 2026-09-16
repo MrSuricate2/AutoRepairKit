@@ -10,7 +10,6 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 
 namespace SamplePlugin.Repair;
 
@@ -240,7 +239,7 @@ public sealed class AutoRepairManager : IDisposable
 
     private unsafe void StartDarkMatterRepair()
     {
-        if (!DarkMatterFinder.TryFindBestStack(out var container, out var slot, out var itemId))
+        if (!DarkMatterFinder.TryFindBestItemId(out var itemId))
         {
             const string msg = "Aucune matière sombre trouvée dans l'inventaire.";
             LogMessage(msg);
@@ -248,18 +247,20 @@ public sealed class AutoRepairManager : IDisposable
             return;
         }
 
-        LogDebug($"Matière sombre trouvée: itemId={itemId} container={container} slot={slot}");
+        LogDebug($"Matière sombre trouvée: itemId={itemId}");
 
-        var agent = AgentInventoryContext.Instance();
-        if (agent == null)
+        var actionManager = ActionManager.Instance();
+        if (actionManager == null)
         {
-            LogDebug("AgentInventoryContext.Instance() a retourné null.");
+            LogDebug("ActionManager.Instance() a retourné null.");
             EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'ouvrir la fenêtre de réparation.");
             return;
         }
 
-        var useResult = agent->UseItem(itemId, container, (uint)slot, 0);
-        LogDebug($"AgentInventoryContext.UseItem -> {useResult}");
+        // Same call the game makes for a hotbar-slotted item or a "/item" macro - it resolves the
+        // bag/slot itself, unlike AgentInventoryContext.UseItem which needs an already-open context menu.
+        var useResult = actionManager->UseAction(ActionType.Item, itemId);
+        LogDebug($"ActionManager.UseAction(Item, {itemId}) -> {useResult}");
         state = State.WaitingForRepairWindow;
         stateEnteredAt = DateTime.Now;
     }
