@@ -427,6 +427,14 @@ public sealed class AutoRepairManager : IDisposable
         var repairResult = repairManager->RepairEquipped(activeMode == RepairMode.Npc);
         LogDebug($"RepairManager.RepairEquipped(isNpc={activeMode == RepairMode.Npc}) -> {repairResult}");
         LogMessage("Équipement réparé automatiquement.");
+
+        var addon = (AddonRepair*)(void*)args.Addon.Address;
+        if (addon != null)
+        {
+            addon->AtkUnitBase.Close(true);
+            LogDebug("Fenêtre de réparation fermée.");
+        }
+
         EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
     }
 
