@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.0.0.1</Version>
     <!-- Manifest fields (see https://github.com/goatcorp/DalamudPackager/blob/827d88dc/DalamudPackager/DalamudPackager.cs#L420) -->
     <Author>your name here</Author>
-    <Name>Sample Plugin</Name>
-    <Punchline>A short one-liner that shows up in /xlplugins.</Punchline>
-    <Description>A brief overview of what your plugin does, highlighting its key features.
-This is shown when the user expands the plugin entry in /xlplugins.</Description>
+    <Name>Auto-Repair Kit</Name>
+    <Punchline>Répare automatiquement votre équipement sous un seuil donné, via matière sombre ou PNJ.</Punchline>
+    <Description>Surveille l'état de votre équipement et déclenche une réparation automatique dès
+qu'une pièce passe sous un seuil configurable. Deux méthodes au choix : matière sombre (sur soi,
+sans rien consommer tant que le seuil n'est pas franchi) ou PNJ réparateur (déplacement automatique
+via vnavmesh puis réparation gratuite). Inclut une jauge visuelle façon RepairMe affichant l'état de
+chaque pièce d'équipement.</Description>
     <RepoUrl>https://github.com/goatcorp/SamplePlugin</RepoUrl>
-    <Tags>sample;plugin;goats</Tags>
+    <Tags>repair;auto-repair;durability;reparation</Tags>
   </PropertyGroup>
 
   <ItemGroup>

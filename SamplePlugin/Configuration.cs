@@ -1,5 +1,8 @@
-﻿using Dalamud.Configuration;
 using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Dalamud.Configuration;
+using SamplePlugin.Repair;
 
 namespace SamplePlugin;
 
@@ -10,6 +13,36 @@ public class Configuration : IPluginConfiguration
 
     public bool IsConfigWindowMovable { get; set; } = true;
     public bool SomePropertyToBeSavedAndWithADefault { get; set; } = true;
+
+    // --- Auto-repair ---
+
+    /// <summary>Master switch for the whole auto-repair feature.</summary>
+    public bool AutoRepairEnabled { get; set; } = false;
+
+    /// <summary>Which method to use when a repair is triggered.</summary>
+    public RepairMode Mode { get; set; } = RepairMode.DarkMatter;
+
+    /// <summary>
+    /// Repair triggers as soon as the worst-condition equipped item drops below this percentage (0-100).
+    /// Nothing is repaired, and no Dark Matter is consumed, while every piece stays above this value.
+    /// </summary>
+    public int RepairThresholdPercent { get; set; } = 30;
+
+    /// <summary>Don't try to repair while in combat, casting, crafting/gathering, in a duty, etc.</summary>
+    public bool PauseInUnsafeState { get; set; } = true;
+
+    /// <summary>Registered "walk here and repair" NPCs, keyed implicitly by TerritoryId.</summary>
+    public List<RepairNpcEntry> RepairNpcs { get; set; } = [];
+
+    // --- Visual gauge (RepairMe-style) ---
+
+    public bool ShowGauge { get; set; } = true;
+    public bool GaugeLocked { get; set; } = false;
+    public Vector2 GaugePosition { get; set; } = new(200, 200);
+
+    /// <summary>Gauge segments turn orange below this % and red below <see cref="GaugeCriticalPercent"/>.</summary>
+    public int GaugeWarningPercent { get; set; } = 50;
+    public int GaugeCriticalPercent { get; set; } = 30;
 
     // The below exists just to make saving less cumbersome
     public void Save()
