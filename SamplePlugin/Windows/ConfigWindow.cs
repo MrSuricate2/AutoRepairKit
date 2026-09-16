@@ -69,6 +69,12 @@ public class ConfigWindow : Window, IDisposable
             if (tab.Success)
                 DrawMiscTab();
         }
+
+        using (var tab = ImRaii.TabItem("Debug"))
+        {
+            if (tab.Success)
+                DrawDebugTab();
+        }
     }
 
     private void DrawRepairTab()
@@ -367,6 +373,62 @@ public class ConfigWindow : Window, IDisposable
             return id;
 
         return configuration.RepairNpcs.FirstOrDefault(n => n.TerritoryId == territoryId)?.Id;
+    }
+
+    private void DrawDebugTab()
+    {
+        var manager = plugin.AutoRepairManager;
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted($"Version du plugin : {Plugin.PluginInterface.Manifest.AssemblyVersion}");
+        ImGui.TextUnformatted($"DalamudApiLevel : {Plugin.PluginInterface.Manifest.DalamudApiLevel}");
+        ImGui.TextUnformatted($"vnavmesh détecté : {(manager.IsVNavmeshAvailable() ? "oui" : "non")}");
+        ImGui.TextUnformatted($"Zone actuelle : {GetTerritoryName((ushort)Plugin.ClientState.TerritoryType)}");
+        ImGui.TextUnformatted($"Mode configuré : {configuration.Mode}, seuil : {configuration.RepairThresholdPercent}%");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        if (ImGui.Button("Copier les informations de debug"))
+            ImGui.SetClipboardText(BuildDebugReport());
+
+        ImGui.SameLine();
+        if (ImGui.Button("Vider le journal"))
+            manager.ClearDebugLog();
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted($"Journal détaillé ({manager.DebugLog.Count} entrées, le plus récent en bas)");
+
+        using var child = ImRaii.Child("##DebugLogChild", new Vector2(0, 0), true);
+        if (child.Success)
+        {
+            foreach (var line in manager.DebugLog)
+                ImGui.TextWrapped(line);
+
+            if (manager.DebugLog.Count > 0)
+                ImGui.SetScrollHereY(1f);
+        }
+    }
+
+    private string BuildDebugReport()
+    {
+        var manager = plugin.AutoRepairManager;
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine("=== Auto-Repair Kit - rapport de debug ===");
+        sb.AppendLine($"Version: {Plugin.PluginInterface.Manifest.AssemblyVersion}");
+        sb.AppendLine($"DalamudApiLevel: {Plugin.PluginInterface.Manifest.DalamudApiLevel}");
+        sb.AppendLine($"Mode: {configuration.Mode}, Seuil: {configuration.RepairThresholdPercent}%, PauseInUnsafeState: {configuration.PauseInUnsafeState}");
+        sb.AppendLine($"vnavmesh disponible: {manager.IsVNavmeshAvailable()}");
+        sb.AppendLine($"Zone actuelle: {GetTerritoryName((ushort)Plugin.ClientState.TerritoryType)} ({Plugin.ClientState.TerritoryType})");
+        sb.AppendLine($"PNJ enregistrés: {configuration.RepairNpcs.Count}");
+        sb.AppendLine("--- Journal détaillé ---");
+
+        foreach (var line in manager.DebugLog)
+            sb.AppendLine(line);
+
+        return sb.ToString();
     }
 
     private static string GetTerritoryName(uint territoryId)

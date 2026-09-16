@@ -85,6 +85,15 @@ public sealed class AutoRepairManager : IDisposable
     /// <summary>Last few status/error messages, most recent first, so nothing gets lost in the chat log.</summary>
     public IReadOnlyCollection<string> MessageHistory => messageHistory;
 
+    private readonly List<string> debugLog = [];
+
+    /// <summary>
+    /// Verbose, technical trace of everything the state machine does (item ids, addon events received,
+    /// native call return values...), oldest first. Meant to be copied wholesale into a bug report -
+    /// see the Debug tab.
+    /// </summary>
+    public IReadOnlyList<string> DebugLog => debugLog;
+
     public AutoRepairManager(Plugin plugin)
     {
         this.plugin = plugin;
@@ -93,6 +102,8 @@ public sealed class AutoRepairManager : IDisposable
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, RepairAddonName, OnRepairAddonSetup);
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "SelectString", OnSelectStringSetup);
         Plugin.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "SelectIconString", OnSelectIconStringSetup);
+
+        LogDebug("AutoRepairManager initialisé.");
     }
 
     public void Dispose()
@@ -107,6 +118,7 @@ public sealed class AutoRepairManager : IDisposable
     {
         Plugin.ChatGui.Print($"[Auto-Repair] {message}");
         AddHistory(message);
+        LogDebug(message);
     }
 
     private void AddHistory(string message)
@@ -115,6 +127,18 @@ public sealed class AutoRepairManager : IDisposable
         while (messageHistory.Count > 10)
             messageHistory.RemoveLast();
     }
+
+    private void LogDebug(string message)
+    {
+        debugLog.Add($"{DateTime.Now:HH:mm:ss.fff} [{state}] {message}");
+        while (debugLog.Count > 300)
+            debugLog.RemoveAt(0);
+    }
+
+    /// <summary>For the Debug tab: is vnavmesh installed/responding at all.</summary>
+    public bool IsVNavmeshAvailable() => navmesh.IsAvailable();
+
+    public void ClearDebugLog() => debugLog.Clear();
 
     /// <summary>Lets the config window trigger a repair immediately, bypassing the threshold check.</summary>
     public void RequestManualRepair()
@@ -206,6 +230,7 @@ public sealed class AutoRepairManager : IDisposable
     {
         activeMode = plugin.Configuration.Mode;
         StatusText = "Réparation en cours...";
+        LogDebug($"StartRepair: mode={activeMode}");
 
         if (activeMode == RepairMode.DarkMatter)
             StartDarkMatterRepair();
@@ -223,14 +248,18 @@ public sealed class AutoRepairManager : IDisposable
             return;
         }
 
+        LogDebug($"Matière sombre trouvée: itemId={itemId} container={container} slot={slot}");
+
         var agent = AgentInventoryContext.Instance();
         if (agent == null)
         {
+            LogDebug("AgentInventoryContext.Instance() a retourné null.");
             EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'ouvrir la fenêtre de réparation.");
             return;
         }
 
-        agent->UseItem(itemId, container, (uint)slot, 0);
+        var useResult = agent->UseItem(itemId, container, (uint)slot, 0);
+        LogDebug($"AgentInventoryContext.UseItem -> {useResult}");
         state = State.WaitingForRepairWindow;
         stateEnteredAt = DateTime.Now;
     }
@@ -259,6 +288,8 @@ public sealed class AutoRepairManager : IDisposable
             EnterCooldown(TimeSpan.FromMinutes(5), msg);
             return;
         }
+
+        LogDebug($"PNJ choisi: {entry.Name} (dataId={entry.DataId}, territoire={entry.TerritoryId}, pos={entry.Position})");
 
         targetNpc = entry;
         moveRetries = 0;
@@ -309,7 +340,8 @@ public sealed class AutoRepairManager : IDisposable
             }
 
             var gameObject = (GameObject*)(void*)npcObject.Address;
-            TargetSystem.Instance()->InteractWithObject(gameObject, false);
+            var interactResult = TargetSystem.Instance()->InteractWithObject(gameObject, false);
+            LogDebug($"InteractWithObject({targetNpc.Name}) -> {interactResult}");
             state = State.WaitingForMenu;
             stateEnteredAt = now;
             StatusText = $"Interaction avec {targetNpc.Name}...";
@@ -362,44 +394,65 @@ public sealed class AutoRepairManager : IDisposable
 
     private unsafe void OnRepairAddonSetup(AddonEvent type, AddonArgs args)
     {
+        LogDebug($"Addon '{RepairAddonName}' PostSetup reçu (state={state}, activeMode={activeMode}).");
+
         if (state != State.WaitingForRepairWindow && state != State.WaitingForMenu)
+        {
+            LogDebug("Ignoré: pas dans un état d'attente de la fenêtre de réparation.");
             return;
+        }
 
         var repairManager = RepairManager.Instance();
         if (repairManager == null)
         {
+            LogDebug("RepairManager.Instance() a retourné null.");
             EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'accéder au module de réparation.");
             return;
         }
 
-        repairManager->RepairEquipped(activeMode == RepairMode.Npc);
+        var repairResult = repairManager->RepairEquipped(activeMode == RepairMode.Npc);
+        LogDebug($"RepairManager.RepairEquipped(isNpc={activeMode == RepairMode.Npc}) -> {repairResult}");
         LogMessage("Équipement réparé automatiquement.");
         EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
     }
 
     private unsafe void OnSelectStringSetup(AddonEvent type, AddonArgs args)
     {
+        LogDebug($"Addon 'SelectString' PostSetup reçu (state={state}, activeMode={activeMode}).");
+
         if (state != State.WaitingForMenu || activeMode != RepairMode.Npc)
             return;
 
         var addon = (AddonSelectString*)(void*)args.Addon.Address;
         if (AtkAddonHelper.TryClickRepairEntry(addon))
         {
+            LogDebug("Entrée 'réparation' trouvée et cliquée dans SelectString.");
             state = State.WaitingForRepairWindow;
             stateEnteredAt = DateTime.Now;
+        }
+        else
+        {
+            LogDebug("Aucune entrée correspondant à un mot-clé de réparation dans ce SelectString.");
         }
     }
 
     private unsafe void OnSelectIconStringSetup(AddonEvent type, AddonArgs args)
     {
+        LogDebug($"Addon 'SelectIconString' PostSetup reçu (state={state}, activeMode={activeMode}).");
+
         if (state != State.WaitingForMenu || activeMode != RepairMode.Npc)
             return;
 
         var addon = (AddonSelectIconString*)(void*)args.Addon.Address;
         if (AtkAddonHelper.TryClickRepairEntry(addon))
         {
+            LogDebug("Entrée 'réparation' trouvée et cliquée dans SelectIconString.");
             state = State.WaitingForRepairWindow;
             stateEnteredAt = DateTime.Now;
+        }
+        else
+        {
+            LogDebug("Aucune entrée correspondant à un mot-clé de réparation dans ce SelectIconString.");
         }
     }
 }
