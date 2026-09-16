@@ -239,12 +239,36 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         }
 
-        var addon = (AtkUnitBase*)(void*)args.Addon.Address;
-        if (addon == null)
-            return;
+        var spiritbondBefore = itemPtr->SpiritbondOrCollectability;
 
-        addon->FireCallbackInt(rowIndex);
-        LogMessage($"Matéria extraite automatiquement de {itemName}.");
+        // FireCallbackInt(rowIndex) on the addon was tried first and confirmed live to do nothing -
+        // this is a real AtkComponentList, not a simple popup menu like SelectString. Selecting a row
+        // goes through the owning Agent's ReceiveEvent instead, mirroring the confirmed-working
+        // AgentMateriaAttach.SelectItem pattern from github.com/Jaksuhn/ffxiv-bundleoftweaks
+        // (GettingTooAttached.cs): values = [1, rowIndex, 1, 0].
+        var ret = new AtkValue();
+        var values = stackalloc AtkValue[4];
+        values[0].Type = AtkValueType.Int;
+        values[0].Int = 1;
+        values[1].Type = AtkValueType.Int;
+        values[1].Int = rowIndex;
+        values[2].Type = AtkValueType.Int;
+        values[2].Int = 1;
+        values[3].Type = AtkValueType.Int;
+        values[3].Int = 0;
+        agent->ReceiveEvent(&ret, values, 4, 0);
+
+        // Re-fetch (don't trust the old pointer) and verify against real, observable state instead of
+        // just assuming the click worked - the previous version logged "success" unconditionally here,
+        // which turned out to be false.
+        var itemPtrAfter = InventoryManager.Instance()->GetInventorySlot(InventoryType.EquippedItems, index);
+        var spiritbondAfter = itemPtrAfter != null ? itemPtrAfter->SpiritbondOrCollectability : spiritbondBefore;
+        LogDebug($"ReceiveEvent(select, row={rowIndex}) envoyé. Symbiose avant={spiritbondBefore}, après={spiritbondAfter}.");
+
+        if (spiritbondAfter < spiritbondBefore)
+            LogMessage($"Matéria extraite de {itemName}.");
+        else
+            LogMessage($"Le clic sur {itemName} n'a rien changé (symbiose toujours à {spiritbondAfter / 100f:0}%) - la sélection n'a probablement pas fonctionné.");
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)
