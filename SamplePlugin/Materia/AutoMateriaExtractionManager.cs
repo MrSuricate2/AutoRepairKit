@@ -222,6 +222,25 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         }
 
+        // The list defaults to whichever category was last used (the user saw Armoury Chest items,
+        // not Equipped) - row indices are only meaningful within the currently active category, so
+        // force it to "Equipped" first. 6 is AgentMateriaAttach.FilterCategory.Equipped; AgentMaterialize
+        // doesn't expose its own named enum but shares the same agent-generator lineage, so it's the
+        // best available guess - confirmed or denied by the ItemCount/Category logged right after.
+        const int equippedCategory = 6;
+        if (agent->Category != equippedCategory)
+        {
+            var categoryBefore = agent->Category;
+            var catRet = new AtkValue();
+            var catValues = stackalloc AtkValue[2];
+            catValues[0].Type = AtkValueType.Int;
+            catValues[0].Int = 0;
+            catValues[1].Type = AtkValueType.Int;
+            catValues[1].Int = equippedCategory;
+            agent->ReceiveEvent(&catRet, catValues, 2, 0);
+            LogDebug($"Changement de catégorie: {categoryBefore} -> {agent->Category} (ItemCount={agent->ItemCount}).");
+        }
+
         var rowIndex = -1;
         for (var i = 0; i < agent->ItemCount; i++)
         {
