@@ -53,6 +53,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private enum State
     {
         Idle,
+        WaitingToClick,
         Cooldown,
     }
 
@@ -61,6 +62,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private State state = State.Idle;
     private DateTime lastCheck = DateTime.MinValue;
     private DateTime cooldownUntil = DateTime.MinValue;
+    private DateTime clickAt = DateTime.MinValue;
 
     /// <summary>
     /// True only right after we ourselves opened the list, so we never auto-click a window the player
@@ -155,6 +157,11 @@ public sealed class AutoMateriaExtractionManager : IDisposable
                 if (MateriaCandidateFinder.TryFindExtractableItem(out _, out _, out _))
                     OpenExtractionWindow();
                 break;
+
+            case State.WaitingToClick:
+                if (now >= clickAt)
+                    PerformClick();
+                break;
         }
     }
 
@@ -205,7 +212,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         EnterCooldown(TimeSpan.FromSeconds(5), StatusText);
     }
 
-    private unsafe void OnListSetup(AddonEvent type, AddonArgs args)
+    private void OnListSetup(AddonEvent type, AddonArgs args)
     {
         LogDebug($"Addon '{ListAddonName}' ouvert (expectingListClick={expectingListClick}).");
 
@@ -213,14 +220,28 @@ public sealed class AutoMateriaExtractionManager : IDisposable
             return;
         expectingListClick = false;
 
-        var addon = (AtkUnitBase*)(void*)args.Addon.Address;
-        if (addon == null)
-            return;
-
         // The window picks its own default selection when several pieces qualify at once - not
         // necessarily the one OpenExtractionWindow() found first - so track the total eligible count
         // rather than one specific slot; see MateriaCandidateFinder.CountExtractableItems.
         eligibleCountBeforeClick = MateriaCandidateFinder.CountExtractableItems();
+
+        // Artisan's own polling waits ~500ms between opening the list and clicking - the list's
+        // backing data likely isn't fully populated yet on the same tick PostSetup fires. Clicking
+        // immediately (the first thing tried here) verifiably did nothing.
+        clickAt = DateTime.Now.AddMilliseconds(500);
+        state = State.WaitingToClick;
+        LogDebug("Attente ~500ms avant le clic (le temps que la liste se charge).");
+    }
+
+    private unsafe void PerformClick()
+    {
+        var addon = Plugin.GameGui.GetAddonByName<AtkUnitBase>(ListAddonName, 1);
+        if (addon == null)
+        {
+            LogDebug($"Addon '{ListAddonName}' introuvable au moment du clic (fermé entre-temps ?).");
+            EnterCooldown(TimeSpan.FromSeconds(10), string.Empty);
+            return;
+        }
 
         // PunishXIV/Artisan's exact call (RawInformation/Spiritbond.cs, ExtractFirstMateria): no row
         // lookup needed, just this fixed FireCallback.
@@ -257,9 +278,19 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         LogDebug($"Pièces éligibles avant={eligibleCountBeforeClick}, après={eligibleCountAfter}.");
 
         if (eligibleCountAfter < eligibleCountBeforeClick)
+        {
             LogMessage($"Matéria extraite ({trackedItemName} ou une autre pièce prête - {eligibleCountAfter} restante(s)).");
+            EnterCooldown(TimeSpan.FromSeconds(10), "Matéria extraite.");
+        }
         else if (eligibleCountBeforeClick > 0)
+        {
             LogMessage("Le clic n'a extrait aucune matéria (aucun changement détecté).");
+            EnterCooldown(TimeSpan.FromSeconds(30), "Échec du clic.");
+        }
+        else
+        {
+            EnterCooldown(TimeSpan.FromSeconds(10), string.Empty);
+        }
     }
 
     private void EnterCooldown(TimeSpan duration, string statusMessage)
