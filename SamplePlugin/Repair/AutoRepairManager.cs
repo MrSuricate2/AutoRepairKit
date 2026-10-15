@@ -175,7 +175,7 @@ public sealed class AutoRepairManager : IDisposable
 
         navmesh.Stop();
         AddHistory("Annulé par l'utilisateur.");
-        EnterCooldown(TimeSpan.FromSeconds(20), "Annulé.");
+        EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairCancelCooldownSec), "Annulé.");
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -193,7 +193,7 @@ public sealed class AutoRepairManager : IDisposable
                 break;
 
             case State.Idle:
-                if (now - lastThresholdCheck < TimeSpan.FromSeconds(2))
+                if (now - lastThresholdCheck < TimeSpan.FromSeconds(plugin.Configuration.RepairCheckIntervalSec))
                     break;
                 lastThresholdCheck = now;
 
@@ -210,20 +210,20 @@ public sealed class AutoRepairManager : IDisposable
                 break;
 
             case State.WaitingForMenu:
-                if (now - stateEnteredAt > TimeSpan.FromSeconds(8))
+                if (now - stateEnteredAt > TimeSpan.FromSeconds(plugin.Configuration.RepairMenuTimeoutSec))
                 {
                     const string msg = "Le PNJ n'a pas proposé de réparation dans le délai imparti, réparation manuelle nécessaire cette fois-ci.";
                     LogMessage(msg);
-                    EnterCooldown(TimeSpan.FromSeconds(30), msg);
+                    EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), msg);
                 }
                 break;
 
             case State.WaitingForRepairWindow:
-                if (now - stateEnteredAt > TimeSpan.FromSeconds(8))
+                if (now - stateEnteredAt > TimeSpan.FromSeconds(plugin.Configuration.RepairWindowTimeoutSec))
                 {
                     const string msg = "La fenêtre de réparation ne s'est pas ouverte, réessai plus tard.";
                     LogMessage(msg);
-                    EnterCooldown(TimeSpan.FromSeconds(30), msg);
+                    EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), msg);
                 }
                 break;
         }
@@ -278,7 +278,7 @@ public sealed class AutoRepairManager : IDisposable
             if (TryFallBackToNpc())
                 return;
 
-            EnterCooldown(TimeSpan.FromMinutes(2), msg);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairFailureCooldownSec), msg);
             return;
         }
 
@@ -288,7 +288,7 @@ public sealed class AutoRepairManager : IDisposable
         if (repairManager == null)
         {
             LogDebug("RepairManager.Instance() a retourné null.");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'accéder au module de réparation.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), "Impossible d'accéder au module de réparation.");
             return;
         }
 
@@ -303,7 +303,7 @@ public sealed class AutoRepairManager : IDisposable
         if (repairResult)
         {
             LogMessage("Équipement réparé automatiquement.");
-            EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairSuccessCooldownSec), "Équipement réparé.");
         }
         else
         {
@@ -313,7 +313,7 @@ public sealed class AutoRepairManager : IDisposable
             if (TryFallBackToNpc())
                 return;
 
-            EnterCooldown(TimeSpan.FromMinutes(2), msg);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairFailureCooldownSec), msg);
         }
     }
 
@@ -346,7 +346,7 @@ public sealed class AutoRepairManager : IDisposable
         {
             const string msg = "Aucun PNJ réparateur enregistré pour cette zone. Ciblez-en un et utilisez \"Enregistrer la cible\" dans la config.";
             LogMessage(msg);
-            EnterCooldown(TimeSpan.FromMinutes(5), msg);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairConfigErrorCooldownSec), msg);
             return;
         }
 
@@ -354,7 +354,7 @@ public sealed class AutoRepairManager : IDisposable
         {
             const string msg = "vnavmesh est introuvable ou non chargé, impossible de se déplacer automatiquement.";
             LogMessage(msg);
-            EnterCooldown(TimeSpan.FromMinutes(5), msg);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairConfigErrorCooldownSec), msg);
             return;
         }
 
@@ -372,23 +372,23 @@ public sealed class AutoRepairManager : IDisposable
     {
         if (targetNpc == null)
         {
-            EnterCooldown(TimeSpan.FromSeconds(30), string.Empty);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), string.Empty);
             return;
         }
 
-        if (now - stateEnteredAt > TimeSpan.FromSeconds(90))
+        if (now - stateEnteredAt > TimeSpan.FromSeconds(plugin.Configuration.RepairTravelTimeoutSec))
         {
             const string msg = "Trajet vers le PNJ réparateur trop long, abandon.";
             LogMessage(msg);
             navmesh.Stop();
-            EnterCooldown(TimeSpan.FromMinutes(2), msg);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairFailureCooldownSec), msg);
             return;
         }
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null)
         {
-            EnterCooldown(TimeSpan.FromSeconds(30), string.Empty);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), string.Empty);
             return;
         }
 
@@ -404,7 +404,7 @@ public sealed class AutoRepairManager : IDisposable
             {
                 const string msg = "PNJ réparateur introuvable à l'endroit enregistré.";
                 LogMessage(msg);
-                EnterCooldown(TimeSpan.FromMinutes(2), msg);
+                EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairFailureCooldownSec), msg);
                 return;
             }
 
@@ -424,7 +424,7 @@ public sealed class AutoRepairManager : IDisposable
             {
                 const string msg = "Impossible d'atteindre le PNJ réparateur (chemin bloqué ?).";
                 LogMessage(msg);
-                EnterCooldown(TimeSpan.FromMinutes(2), msg);
+                EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairFailureCooldownSec), msg);
                 return;
             }
 
@@ -475,7 +475,7 @@ public sealed class AutoRepairManager : IDisposable
         if (repairManager == null)
         {
             LogDebug("RepairManager.Instance() a retourné null.");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Impossible d'accéder au module de réparation.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairRetryCooldownSec), "Impossible d'accéder au module de réparation.");
             return;
         }
 
@@ -490,7 +490,7 @@ public sealed class AutoRepairManager : IDisposable
             LogDebug("Fenêtre de réparation fermée.");
         }
 
-        EnterCooldown(TimeSpan.FromSeconds(10), "Équipement réparé.");
+        EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.RepairSuccessCooldownSec), "Équipement réparé.");
     }
 
     private unsafe void OnSelectStringSetup(AddonEvent type, AddonArgs args)

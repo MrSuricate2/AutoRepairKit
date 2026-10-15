@@ -64,6 +64,51 @@ public class Configuration : IPluginConfiguration
     public int GaugeWarningPercent { get; set; } = 50;
     public int GaugeCriticalPercent { get; set; } = 30;
 
+    // --- Timings (editable in the "Délais" tab) ---
+
+    // Repair, in seconds
+    public int RepairCheckIntervalSec { get; set; } = 2;
+    public int RepairMenuTimeoutSec { get; set; } = 8;
+    public int RepairWindowTimeoutSec { get; set; } = 8;
+    public int RepairTravelTimeoutSec { get; set; } = 90;
+    public int RepairSuccessCooldownSec { get; set; } = 10;
+    public int RepairCancelCooldownSec { get; set; } = 20;
+    public int RepairRetryCooldownSec { get; set; } = 30;
+    public int RepairFailureCooldownSec { get; set; } = 120;
+    public int RepairConfigErrorCooldownSec { get; set; } = 300;
+
+    // Materia extraction
+    public int MateriaCheckIntervalSec { get; set; } = 2;
+    public int MateriaClickDelayMs { get; set; } = 500;
+    public int MateriaVerifyDelayMs { get; set; } = 1500;
+    public int MateriaMaxRetries { get; set; } = 6;
+    public int MateriaOpenCooldownSec { get; set; } = 5;
+    public int MateriaSuccessCooldownSec { get; set; } = 10;
+    public int MateriaFailureCooldownSec { get; set; } = 30;
+    public int MateriaNoneCooldownSec { get; set; } = 120;
+
+    public void ResetTimings()
+    {
+        var d = new Configuration();
+        RepairCheckIntervalSec = d.RepairCheckIntervalSec;
+        RepairMenuTimeoutSec = d.RepairMenuTimeoutSec;
+        RepairWindowTimeoutSec = d.RepairWindowTimeoutSec;
+        RepairTravelTimeoutSec = d.RepairTravelTimeoutSec;
+        RepairSuccessCooldownSec = d.RepairSuccessCooldownSec;
+        RepairCancelCooldownSec = d.RepairCancelCooldownSec;
+        RepairRetryCooldownSec = d.RepairRetryCooldownSec;
+        RepairFailureCooldownSec = d.RepairFailureCooldownSec;
+        RepairConfigErrorCooldownSec = d.RepairConfigErrorCooldownSec;
+        MateriaCheckIntervalSec = d.MateriaCheckIntervalSec;
+        MateriaClickDelayMs = d.MateriaClickDelayMs;
+        MateriaVerifyDelayMs = d.MateriaVerifyDelayMs;
+        MateriaMaxRetries = d.MateriaMaxRetries;
+        MateriaOpenCooldownSec = d.MateriaOpenCooldownSec;
+        MateriaSuccessCooldownSec = d.MateriaSuccessCooldownSec;
+        MateriaFailureCooldownSec = d.MateriaFailureCooldownSec;
+        MateriaNoneCooldownSec = d.MateriaNoneCooldownSec;
+    }
+
     // The below exists just to make saving less cumbersome
     public void Save()
     {

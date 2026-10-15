@@ -74,7 +74,6 @@ public sealed class AutoMateriaExtractionManager : IDisposable
     private int eligibleCountBeforeClick;
     private string trackedItemName = string.Empty;
     private int retryCount;
-    private const int MaxRetries = 6; // ~6 x 500ms = 3s of retries on the same open window, like Artisan's loop.
 
     /// <summary>
     /// Set by the manual "Extraire maintenant" button; keeps the polling loop going (independently of
@@ -161,7 +160,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
                 break;
 
             case State.Idle:
-                if (now - lastCheck < TimeSpan.FromSeconds(2))
+                if (now - lastCheck < TimeSpan.FromSeconds(plugin.Configuration.MateriaCheckIntervalSec))
                     break;
                 lastCheck = now;
 
@@ -204,7 +203,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         {
             manualBatchActive = false;
             LogMessage("Aucune pièce à 100% de lien avec matéria mélangée.");
-            EnterCooldown(TimeSpan.FromMinutes(2), string.Empty);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaNoneCooldownSec), string.Empty);
             return;
         }
 
@@ -212,7 +211,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         if (actionManager == null)
         {
             LogDebug("ActionManager.Instance() a retourné null.");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Erreur interne.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaFailureCooldownSec), "Erreur interne.");
             return;
         }
 
@@ -226,12 +225,12 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         {
             expectingListClick = false;
             LogMessage("Impossible d'ouvrir la fenêtre d'extraction de matéria (action générale refusée).");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Échec de l'ouverture.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaFailureCooldownSec), "Échec de l'ouverture.");
             return;
         }
 
         StatusText = $"Extraction en cours sur {itemName}...";
-        EnterCooldown(TimeSpan.FromSeconds(5), StatusText);
+        EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaOpenCooldownSec), StatusText);
     }
 
     private void OnListSetup(AddonEvent type, AddonArgs args)
@@ -251,7 +250,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         // Artisan's own polling waits ~500ms between opening the list and clicking - the list's
         // backing data likely isn't fully populated yet on the same tick PostSetup fires. Clicking
         // immediately (the first thing tried here) verifiably did nothing.
-        clickAt = DateTime.Now.AddMilliseconds(500);
+        clickAt = DateTime.Now.AddMilliseconds(plugin.Configuration.MateriaClickDelayMs);
         state = State.WaitingToClick;
         LogDebug("Attente ~500ms avant le clic (le temps que la liste se charge).");
     }
@@ -262,7 +261,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         if (addon == null)
         {
             LogDebug($"Addon '{ListAddonName}' introuvable au moment du clic (fermé entre-temps ?).");
-            EnterCooldown(TimeSpan.FromSeconds(10), string.Empty);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaSuccessCooldownSec), string.Empty);
             return;
         }
 
@@ -277,7 +276,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         // Extraction is presumably server-validated (it changes real inventory/item state), so the
         // local eligible-item count doesn't update instantly - checking 1ms after the click showed
         // "no change" even when the extraction genuinely went through. Give it a moment.
-        verifyAt = DateTime.Now.AddSeconds(1.5);
+        verifyAt = DateTime.Now.AddMilliseconds(plugin.Configuration.MateriaVerifyDelayMs);
         state = State.WaitingToVerify;
     }
 
@@ -296,7 +295,7 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         addon->FireCallbackInt(0);
         LogDebug("Confirmation 'Oui' envoyée sur MaterializeDialog.");
 
-        verifyAt = DateTime.Now.AddSeconds(1.5);
+        verifyAt = DateTime.Now.AddMilliseconds(plugin.Configuration.MateriaVerifyDelayMs);
         state = State.WaitingToVerify;
     }
 
@@ -308,26 +307,26 @@ public sealed class AutoMateriaExtractionManager : IDisposable
         if (eligibleCountAfter < eligibleCountBeforeClick)
         {
             LogMessage($"Matéria extraite ({trackedItemName} ou une autre pièce prête - {eligibleCountAfter} restante(s)).");
-            EnterCooldown(TimeSpan.FromSeconds(10), "Matéria extraite.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaSuccessCooldownSec), "Matéria extraite.");
         }
-        else if (eligibleCountBeforeClick > 0 && retryCount < MaxRetries && Plugin.GameGui.GetAddonByName<AtkUnitBase>(ListAddonName, 1) != null)
+        else if (eligibleCountBeforeClick > 0 && retryCount < plugin.Configuration.MateriaMaxRetries && Plugin.GameGui.GetAddonByName<AtkUnitBase>(ListAddonName, 1) != null)
         {
             // Artisan's own loop just keeps calling ExtractFirstMateria() every ~500ms for as long as
             // the window stays open, rather than giving up after one try - the list may simply not be
             // interactive yet on the first couple of attempts even after the 500ms initial wait.
             retryCount++;
-            LogDebug($"Aucun changement, nouvelle tentative sur la même fenêtre ({retryCount}/{MaxRetries}).");
-            clickAt = DateTime.Now.AddMilliseconds(500);
+            LogDebug($"Aucun changement, nouvelle tentative sur la même fenêtre ({retryCount}/{plugin.Configuration.MateriaMaxRetries}).");
+            clickAt = DateTime.Now.AddMilliseconds(plugin.Configuration.MateriaClickDelayMs);
             state = State.WaitingToClick;
         }
         else if (eligibleCountBeforeClick > 0)
         {
             LogMessage("Le clic n'a extrait aucune matéria (aucun changement détecté).");
-            EnterCooldown(TimeSpan.FromSeconds(30), "Échec du clic.");
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaFailureCooldownSec), "Échec du clic.");
         }
         else
         {
-            EnterCooldown(TimeSpan.FromSeconds(10), string.Empty);
+            EnterCooldown(TimeSpan.FromSeconds(plugin.Configuration.MateriaSuccessCooldownSec), string.Empty);
         }
     }
 

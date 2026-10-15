@@ -71,6 +71,12 @@ public class ConfigWindow : Window, IDisposable
                 DrawMateriaTab();
         }
 
+        using (var tab = ImRaii.TabItem("Délais"))
+        {
+            if (tab.Success)
+                DrawTimingsTab();
+        }
+
         using (var tab = ImRaii.TabItem("Divers"))
         {
             if (tab.Success)
@@ -432,6 +438,61 @@ public class ConfigWindow : Window, IDisposable
                 foreach (var entry in manager.MessageHistory)
                     ImGui.TextWrapped(entry);
             }
+        }
+    }
+
+    private void TimingSlider(string label, int value, int min, int max, string format, Action<int> set, string? tooltip = null)
+    {
+        ImGui.SetNextItemWidth(250);
+        if (ImGui.SliderInt(label, ref value, min, max, format))
+        {
+            set(value);
+            configuration.Save();
+        }
+
+        if (tooltip != null && ImGui.IsItemHovered())
+            ImGui.SetTooltip(tooltip);
+    }
+
+    private void DrawTimingsTab()
+    {
+        var c = configuration;
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Un cooldown est la pause observée après une action avant de ré-évaluer. Survolez un réglage pour le détail.");
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Réparation");
+        TimingSlider("Intervalle de vérification##r", c.RepairCheckIntervalSec, 1, 30, "%d s", v => c.RepairCheckIntervalSec = v, "Fréquence de contrôle de la durabilité.");
+        TimingSlider("Attente du menu du PNJ", c.RepairMenuTimeoutSec, 2, 30, "%d s", v => c.RepairMenuTimeoutSec = v, "Délai max pour que le PNJ propose la réparation après interaction.");
+        TimingSlider("Attente de la fenêtre de réparation", c.RepairWindowTimeoutSec, 2, 30, "%d s", v => c.RepairWindowTimeoutSec = v);
+        TimingSlider("Durée max du trajet vers le PNJ", c.RepairTravelTimeoutSec, 10, 300, "%d s", v => c.RepairTravelTimeoutSec = v);
+        TimingSlider("Cooldown après succès##r", c.RepairSuccessCooldownSec, 1, 120, "%d s", v => c.RepairSuccessCooldownSec = v);
+        TimingSlider("Cooldown après annulation", c.RepairCancelCooldownSec, 1, 300, "%d s", v => c.RepairCancelCooldownSec = v);
+        TimingSlider("Cooldown après échec temporaire", c.RepairRetryCooldownSec, 1, 300, "%d s", v => c.RepairRetryCooldownSec = v, "Menu/fenêtre non ouverts, erreur interne...");
+        TimingSlider("Cooldown après échec", c.RepairFailureCooldownSec, 5, 900, "%d s", v => c.RepairFailureCooldownSec = v, "Plus de matière sombre, trajet trop long, chemin bloqué, PNJ introuvable...");
+        TimingSlider("Cooldown config manquante", c.RepairConfigErrorCooldownSec, 5, 1800, "%d s", v => c.RepairConfigErrorCooldownSec = v, "Aucun PNJ enregistré ou vnavmesh absent.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Extraction de matéria");
+        TimingSlider("Intervalle de vérification##m", c.MateriaCheckIntervalSec, 1, 30, "%d s", v => c.MateriaCheckIntervalSec = v);
+        TimingSlider("Délai avant clic", c.MateriaClickDelayMs, 0, 3000, "%d ms", v => c.MateriaClickDelayMs = v, "Attente entre l'ouverture de la liste et le clic (et entre deux tentatives).");
+        TimingSlider("Délai avant vérification", c.MateriaVerifyDelayMs, 100, 5000, "%d ms", v => c.MateriaVerifyDelayMs = v, "Attente après le clic avant de contrôler si l'extraction a eu lieu.");
+        TimingSlider("Tentatives max sur la même fenêtre", c.MateriaMaxRetries, 0, 20, "%d", v => c.MateriaMaxRetries = v);
+        TimingSlider("Cooldown après ouverture", c.MateriaOpenCooldownSec, 1, 60, "%d s", v => c.MateriaOpenCooldownSec = v);
+        TimingSlider("Cooldown après succès##m", c.MateriaSuccessCooldownSec, 1, 120, "%d s", v => c.MateriaSuccessCooldownSec = v, "Aussi utilisé quand la fenêtre se ferme avant le clic.");
+        TimingSlider("Cooldown après échec", c.MateriaFailureCooldownSec, 1, 300, "%d s", v => c.MateriaFailureCooldownSec = v);
+        TimingSlider("Cooldown si rien à extraire", c.MateriaNoneCooldownSec, 5, 900, "%d s", v => c.MateriaNoneCooldownSec = v);
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        if (ImGui.Button("Réinitialiser les délais"))
+        {
+            c.ResetTimings();
+            c.Save();
         }
     }
 
